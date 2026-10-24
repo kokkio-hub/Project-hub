@@ -175,13 +175,23 @@ function parseBackup(env: NodeJS.ProcessEnv): BackupConfig | null {
   };
 }
 
+/**
+ * TRUST_PROXY: a number is how many proxies sit in front of the app (1 = one,
+ * such as Railway's edge or a single nginx). Only those hops' X-Forwarded-For
+ * entries are believed, so a client can't fake its IP address to get around the
+ * sign-in limit. "true" trusts every hop, which is only safe when nothing can
+ * reach the app except through the proxy.
+ */
 function parseTrustProxy(value: string | undefined): boolean | number | string {
   if (value === undefined || value.trim() === '') return false;
-  const bool = parseBoolean(value);
+  const v = value.trim();
+  if (/^\d+$/.test(v)) {
+    const hops = Number(v);
+    return hops === 0 ? false : hops;
+  }
+  const bool = parseBoolean(v);
   if (bool !== undefined) return bool;
-  const n = Number(value);
-  if (Number.isInteger(n) && n >= 0) return n;
-  return value.trim(); // e.g. "loopback" or "10.0.0.0/8"
+  return v; // e.g. "loopback" or "10.0.0.0/8"
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {

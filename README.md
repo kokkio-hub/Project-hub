@@ -238,7 +238,7 @@ Set these as environment variables or in `.env`. All of them are optional.
 | `PORT` | `3000` | HTTP port. |
 | `HOST` | `0.0.0.0` | Network interface to listen on. |
 | `DATABASE_PATH` | `./data/project-hub.db` | SQLite file. Docker uses `/data/project-hub.db`. |
-| `TRUST_PROXY` | *(off)* | Set to `1` when the app runs behind a reverse proxy or load balancer, so it sees real client IPs and detects HTTPS. |
+| `TRUST_PROXY` | *(off)* | The number of proxies in front of the app: `1` behind one reverse proxy or load balancer (Railway, Caddy, nginx), so it sees real client IPs and detects HTTPS. Only that many `X-Forwarded-For` entries are believed, so clients can't fake their address. `true` trusts all of them. |
 | `COOKIE_SECURE` | `auto` | `auto` marks the session cookie *Secure* when the request came in over HTTPS. `true` or `false` forces it on or off. |
 | `SESSION_TTL_DAYS` | `30` | How long people stay signed in without using the app. |
 | `LOGIN_RATE_LIMIT` | `20` | Failed sign-in attempts allowed per IP address per 15 minutes. |
