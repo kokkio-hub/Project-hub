@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
-import { badRequest, conflict, HttpError, notFound } from '../lib/errors.js';
+import { badRequest, badRequestIn, conflict, HttpError, notFound } from '../lib/errors.js';
 import { parse, parseId, zColor, zEmail, zName, zPassword, zRole, zTitle } from '../lib/validation.js';
 import {
   countActiveAdmins,
@@ -103,7 +103,7 @@ export function usersRouter(ctx: AppContext): Router {
     if (temporaryPassword) body.temporaryPassword = temporaryPassword;
     if (!usePassword) {
       const sendEmail = input.invite === 'email';
-      const result = await issueInvitation(ctx, { user, invitedBy: req.user!, baseUrl: publicBaseUrl(ctx, req), sendEmail });
+      const result = await issueInvitation(ctx, { user, invitedBy: req.user!, baseUrl: publicBaseUrl(ctx, req), sendEmail, lang: req.lang });
       if (sendEmail) body.emailed = result.emailed;
       // Return the link when it was asked for, or when the email failed so the admin can send it another way.
       if (!result.emailed) body.inviteUrl = result.url;
@@ -147,10 +147,19 @@ export function usersRouter(ctx: AppContext): Router {
         }
       ).n;
       if (owned > 0 || open > 0) {
-        const parts = [owned > 0 && `owns ${owned} project${owned === 1 ? '' : 's'}`, open > 0 && `has ${open} open task${open === 1 ? '' : 's'}`]
-          .filter(Boolean)
-          .join(' and ');
-        throw badRequest(`${target.name} ${parts}. Hand those over before making them a guest.`, { role: 'Reassign their work first' });
+        const name = target.name;
+        throw badRequestIn(
+          (tr) => {
+            const projects = tr.tn('{count} project', '{count} projects', owned);
+            const tasks = tr.tn('{count} open task', '{count} open tasks', open);
+            if (owned > 0 && open > 0) {
+              return tr.t('{name} owns {projects} and has {tasks}. Hand those over before making them a guest.', { name, projects, tasks });
+            }
+            if (owned > 0) return tr.t('{name} owns {projects}. Hand those over before making them a guest.', { name, projects });
+            return tr.t('{name} has {tasks}. Hand those over before making them a guest.', { name, tasks });
+          },
+          { role: 'Reassign their work first' },
+        );
       }
     }
 
@@ -175,7 +184,7 @@ export function usersRouter(ctx: AppContext): Router {
     if (!target.is_active) throw badRequest(`Reactivate ${target.name} before sending a new invitation.`);
     if (sendEmail) requireEmail();
 
-    const result = await issueInvitation(ctx, { user: target, invitedBy: req.user!, baseUrl: publicBaseUrl(ctx, req), sendEmail });
+    const result = await issueInvitation(ctx, { user: target, invitedBy: req.user!, baseUrl: publicBaseUrl(ctx, req), sendEmail, lang: req.lang });
     const body: InviteResponse = { expiresAt: result.expiresAt };
     if (sendEmail) body.emailed = result.emailed;
     if (!result.emailed) body.inviteUrl = result.url;
@@ -229,7 +238,7 @@ export function usersRouter(ctx: AppContext): Router {
       requireEmail();
       if (!target.is_active) throw badRequest(`Reactivate ${target.name} first.`);
       try {
-        await sendPasswordResetLink(ctx, { user: target, requestedBy: req.user!, baseUrl: publicBaseUrl(ctx, req) });
+        await sendPasswordResetLink(ctx, { user: target, requestedBy: req.user!, baseUrl: publicBaseUrl(ctx, req), lang: req.lang });
       } catch (error) {
         throw new HttpError(502, `The reset link couldn't be emailed. ${error instanceof Error ? error.message : ''}`.trim());
       }

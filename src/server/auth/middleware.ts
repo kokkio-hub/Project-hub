@@ -3,6 +3,8 @@ import type { AppContext } from '../context.js';
 import { forbidden, unauthorized } from '../lib/errors.js';
 import { isIsoDate, localToday } from '../../shared/dates.js';
 import { SESSION_COOKIE, resolveSession } from './sessions.js';
+import { isLang } from '../../shared/i18n/core.js';
+import { requestLanguage } from '../i18n/index.js';
 
 export function sessionCookieOptions(ctx: AppContext, req: Request, expiresAt?: string): CookieOptions {
   const secure = ctx.config.cookieSecure === 'auto' ? req.secure : ctx.config.cookieSecure;
@@ -60,13 +62,27 @@ export function authenticate(ctx: AppContext): RequestHandler {
         const offset = Number(req.get('x-client-tz-offset'));
         if (Number.isInteger(offset) && offset >= -840 && offset <= 840 && offset !== session.user.tz_offset_minutes) {
           ctx.db.prepare('UPDATE users SET tz_offset_minutes = ? WHERE id = ?').run(offset, session.user.id);
-          req.user = { ...session.user, tz_offset_minutes: offset };
+          req.user = { ...req.user, tz_offset_minutes: offset };
+        }
+        // And the language they use the app in, so emails come in that language too.
+        const lang = req.get('x-client-lang');
+        if (isLang(lang) && lang !== session.user.ui_language) {
+          ctx.db.prepare('UPDATE users SET ui_language = ? WHERE id = ?').run(lang, session.user.id);
+          req.user = { ...req.user, ui_language: lang };
         }
         if (session.refreshed) setSessionCookie(ctx, req, res, token, session.expiresAt);
       } else {
         clearSessionCookie(ctx, req, res);
       }
     }
+    next();
+  };
+}
+
+/** Works out which language to answer in. Runs after `authenticate`, so it can use the person's settings. */
+export function clientLanguage(ctx: AppContext): RequestHandler {
+  return (req, _res, next) => {
+    req.lang = requestLanguage(req, ctx.config.defaultLanguage, req.user);
     next();
   };
 }
@@ -78,7 +94,7 @@ export function authenticate(ctx: AppContext): RequestHandler {
 export const requireAuth: RequestHandler = (req, _res, next) => {
   if (!req.user) return next(unauthorized());
   if (req.user.must_change_password) {
-    return next(forbidden('Please choose a new password before continuing.'));
+    return next(forbidden('Please choose a new password before continuing.').withCode('password_change_required'));
   }
   next();
 };

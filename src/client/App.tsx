@@ -6,6 +6,7 @@ import { onAuthFailure } from './api/client';
 import { qk, resetSessionData, useAppStatus, useMe } from './api/queries';
 import { AppNameContext, CurrentUserContext } from './auth/session';
 import { ErrorNotice, PageLoading } from './components/Feedback';
+import { useLanguage } from './i18n';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
 import { ForcedPasswordChangePage, LoginPage, SetupPage } from './pages/AuthPages';
@@ -33,6 +34,13 @@ function FullScreenError({ error, onRetry }: { error: unknown; onRetry: () => vo
 export function App() {
   const qc = useQueryClient();
   const status = useAppStatus();
+  const { setWorkspaceDefault } = useLanguage();
+  const workspaceLanguage = status.data?.defaultLanguage;
+
+  // An admin can set the workspace's language; it applies to people who haven't picked one.
+  useEffect(() => {
+    if (workspaceLanguage !== undefined) setWorkspaceDefault(workspaceLanguage);
+  }, [workspaceLanguage, setWorkspaceDefault]);
 
   // If the session ends mid-use (expired, signed out elsewhere, deactivated), show the sign-in screen.
   useEffect(() => {
@@ -78,6 +86,13 @@ export function App() {
 /** Shows the sign-in page (or the forced password change) until someone is signed in, then the app. */
 function SignedIn({ status }: { status: AppStatus }) {
   const me = useMe();
+  const { setLang } = useLanguage();
+  const chosen = me.data?.language;
+
+  // A language chosen in account settings follows the person to every browser.
+  useEffect(() => {
+    if (chosen) setLang(chosen);
+  }, [chosen, setLang]);
   if (me.isPending) return <PageLoading />;
   if (me.isError) return <FullScreenError error={me.error} onRetry={() => void me.refetch()} />;
   if (!me.data) return <LoginPage appName={status.appName} passwordResetEnabled={status.passwordResetEnabled} />;

@@ -3,6 +3,8 @@
  * This file must stay free of runtime imports so both sides can use it.
  */
 
+import type { Lang } from './i18n/core.js';
+
 // ---------------------------------------------------------------------------
 // Enumerations
 // ---------------------------------------------------------------------------
@@ -124,6 +126,8 @@ export interface Me extends User {
   /** True when a calendar feed address exists. */
   calendarFeed: boolean;
   calendarScope: 'mine' | 'all';
+  /** Chosen interface language; null follows the browser (or the workspace default). */
+  language: Lang | null;
 }
 
 export interface InviteStatus {
@@ -440,6 +444,8 @@ export interface AppStatus {
   passwordResetEnabled: boolean;
   /** Largest file that can be attached, in bytes. */
   uploadLimitBytes: number;
+  /** Language an admin set for the workspace (DEFAULT_LANGUAGE); null lets each browser decide. */
+  defaultLanguage: Lang | null;
 }
 
 /** Answer to a sign-in with the right password when the account uses two-factor sign-in. */
@@ -451,6 +457,8 @@ export interface TwoFactorChallenge {
 
 export interface ApiErrorBody {
   error: string;
+  /** A stable code for errors the app reacts to (the message is translated). */
+  code?: string;
   /** Field-level validation messages, keyed by field name. */
   fields?: Record<string, string>;
 }

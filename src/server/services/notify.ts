@@ -8,6 +8,7 @@ import { insertNotification, markEmailed, pendingEmailFor, toNotification } from
 import { getProjectRow, type ProjectRow } from '../repos/projects.js';
 import type { TaskRow } from '../repos/tasks.js';
 import { getUserById, type UserRow } from '../repos/users.js';
+import { trFor, userLanguage, type Translator } from '../i18n/index.js';
 import { canSeeProject, viewerParams, WORK_PROJECT_IDS } from './permissions.js';
 
 /**
@@ -147,7 +148,7 @@ function taskUrl(appUrl: string, projectId: number | null, taskId: number | null
   return appUrl;
 }
 
-function emailItems(ctx: AppContext, rows: ReturnType<typeof pendingEmailFor>, appUrl: string): NotificationEmailItem[] {
+function emailItems(ctx: AppContext, rows: ReturnType<typeof pendingEmailFor>, appUrl: string, tr: Translator): NotificationEmailItem[] {
   const names = new Map<number, string | null>();
   const nameOf = (id: number | null) => {
     if (id === null) return null;
@@ -156,7 +157,7 @@ function emailItems(ctx: AppContext, rows: ReturnType<typeof pendingEmailFor>, a
   };
   return rows.map((row) => {
     const n = toNotification(row);
-    return { text: describeNotification(n, nameOf(n.actorId)), url: taskUrl(appUrl, n.projectId, n.taskId), meta: n.data.projectName };
+    return { text: describeNotification(n, nameOf(n.actorId), tr), url: taskUrl(appUrl, n.projectId, n.taskId), meta: n.data.projectName };
   });
 }
 
@@ -194,10 +195,14 @@ export async function sendInstantEmails(ctx: AppContext, now = new Date()): Prom
   for (const user of users) {
     const rows = pendingEmailFor(db, user, before);
     if (rows.length === 0) continue;
+    const tr = trFor(userLanguage(user, ctx.config.defaultLanguage));
     try {
       await ctx.mailer.send({
         to: user.email,
-        ...notificationsEmail({ appName: ctx.config.appName, appUrl, name: user.name, mode: 'instant', notifications: emailItems(ctx, rows, appUrl) }),
+        ...notificationsEmail(
+          { appName: ctx.config.appName, appUrl, name: user.name, mode: 'instant', notifications: emailItems(ctx, rows, appUrl, tr) },
+          tr,
+        ),
       });
       markEmailed(db, rows.map((r) => r.id));
       sent++;
@@ -238,18 +243,22 @@ export async function sendDailyDigests(ctx: AppContext, now = new Date()): Promi
     if (rows.length === 0 && due.length === 0) continue;
 
     const item = (t: (typeof due)[number]) => ({ text: t.title, url: taskUrl(appUrl, t.project_id, t.id), meta: t.project_name });
+    const tr = trFor(userLanguage(user, ctx.config.defaultLanguage));
     try {
       await ctx.mailer.send({
         to: user.email,
-        ...notificationsEmail({
-          appName: ctx.config.appName,
-          appUrl,
-          name: user.name,
-          mode: 'daily',
-          notifications: emailItems(ctx, rows, appUrl),
-          overdue: due.filter((t) => t.due_date < date).map(item),
-          dueToday: due.filter((t) => t.due_date === date).map(item),
-        }),
+        ...notificationsEmail(
+          {
+            appName: ctx.config.appName,
+            appUrl,
+            name: user.name,
+            mode: 'daily',
+            notifications: emailItems(ctx, rows, appUrl, tr),
+            overdue: due.filter((t) => t.due_date < date).map(item),
+            dueToday: due.filter((t) => t.due_date === date).map(item),
+          },
+          tr,
+        ),
       });
       markEmailed(db, rows.map((r) => r.id));
       sent++;

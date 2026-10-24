@@ -7,6 +7,7 @@ import { Spinner } from '../../components/Feedback';
 import { Popover } from '../../components/Popover';
 import { formatDate, formatDateTime, timeAgo } from '../../lib/format';
 import { useNow } from '../../lib/hooks';
+import { t, tx } from '../../i18n';
 
 const ICONS: Record<NotificationType, React.ReactNode> = {
   assigned: <UserPlus size={15} aria-hidden />,
@@ -18,43 +19,25 @@ const ICONS: Record<NotificationType, React.ReactNode> = {
 };
 
 function Sentence({ n, usersById }: { n: Notification; usersById: Map<number, User> }) {
-  const actor = <strong>{n.actorId ? (usersById.get(n.actorId)?.name ?? 'Someone') : 'Someone'}</strong>;
-  const task = <strong>{n.data.taskTitle ?? 'a task'}</strong>;
+  const actor = <strong>{n.actorId ? (usersById.get(n.actorId)?.name ?? t('Someone')) : t('Someone')}</strong>;
+  const task = <strong>{n.data.taskTitle ?? t('a task')}</strong>;
   switch (n.type) {
     case 'assigned':
-      return (
-        <>
-          {actor} assigned {task} to you
-        </>
-      );
+      return tx('{actor} assigned {task} to you', { actor, task });
     case 'mentioned':
-      return (
-        <>
-          {actor} mentioned you on {task}
-        </>
-      );
+      return tx('{actor} mentioned you on {task}', { actor, task });
     case 'commented':
-      return (
-        <>
-          {actor} commented on {task}
-        </>
-      );
+      return tx('{actor} commented on {task}', { actor, task });
     case 'completed':
-      return (
-        <>
-          {actor} completed {task}
-        </>
-      );
+      return tx('{actor} completed {task}', { actor, task });
     case 'unblocked':
-      return <>{task} is ready to start: everything it was waiting for is done</>;
+      return tx('{task} is ready to start: everything it was waiting for is done', { task });
     case 'due_soon':
-      return (
-        <>
-          {task} is due tomorrow{n.data.dueDate ? ` (${formatDate(n.data.dueDate)})` : ''}
-        </>
-      );
+      return n.data.dueDate
+        ? tx('{task} is due tomorrow ({date})', { task, date: formatDate(n.data.dueDate) })
+        : tx('{task} is due tomorrow', { task });
     default:
-      return <>{actor} changed {task}</>;
+      return tx('{actor} changed {task}', { actor, task });
   }
 }
 
@@ -76,15 +59,15 @@ export function NotificationsButton() {
 
   return (
     <Popover
-      label="Notifications"
+      label={t('Notifications')}
       width={380}
       className="notifications-popover"
       trigger={(props) => (
         <button
           type="button"
           className="icon-btn bell"
-          aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
-          title="Notifications"
+          aria-label={unread > 0 ? t('Notifications, {count} unread', { count: unread }) : t('Notifications')}
+          title={t('Notifications')}
           {...props}
         >
           <Bell size={18} />
@@ -95,11 +78,11 @@ export function NotificationsButton() {
       {(close) => (
         <div className="notifications">
           <div className="notifications-head">
-            <strong>Notifications</strong>
+            <strong>{t('Notifications')}</strong>
             <span className="spacer" />
             {unread > 0 && (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => markRead.mutate({ all: true })}>
-                <CheckCheck size={14} /> Mark all read
+                <CheckCheck size={14} /> {t('Mark all read')}
               </button>
             )}
           </div>
@@ -111,8 +94,7 @@ export function NotificationsButton() {
             <div className="notifications-empty">
               <Bell size={20} aria-hidden />
               <p>
-                Nothing yet. You’ll hear about tasks assigned to you, comments on your tasks and when someone mentions you with
-                @name.
+                {t('Nothing yet. You’ll hear about tasks assigned to you, comments on your tasks and when someone mentions you with @name.')}
               </p>
             </div>
           ) : (
@@ -131,7 +113,7 @@ export function NotificationsButton() {
                         {timeAgo(n.createdAt)}
                       </span>
                     </span>
-                    {!n.readAt && <span className="unread-dot" aria-label="Unread" />}
+                    {!n.readAt && <span className="unread-dot" aria-label={t('Unread')} />}
                   </button>
                 </li>
               ))}

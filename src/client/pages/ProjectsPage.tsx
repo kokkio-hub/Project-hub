@@ -11,19 +11,20 @@ import { Meter } from '../components/Bits';
 import { EmptyState, ErrorNotice, PageLoading } from '../components/Feedback';
 import { HealthBadge, healthTone, ProjectDot, StatusGlyph } from '../components/Icons';
 import { ProjectFormModal } from '../features/projects/ProjectFormModal';
-import { formatDate, percent, plural } from '../lib/format';
+import { formatDate, percent } from '../lib/format';
+import { N_, t, tn, tr } from '../i18n';
 
 type Tab = 'current' | 'completed' | 'archived' | 'templates';
 
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'current', label: 'Active & on hold' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'archived', label: 'Archived' },
-  { value: 'templates', label: 'Templates' },
+  { value: 'current', label: N_('Active & on hold') },
+  { value: 'completed', label: N_('Completed') },
+  { value: 'archived', label: N_('Archived') },
+  { value: 'templates', label: N_('Templates') },
 ];
 
 export function ProjectsPage() {
-  useDocumentTitle('Projects');
+  useDocumentTitle(t('Projects'));
   const me = useCurrentUser();
   const canCreate = canChangeWork(me);
   const projects = useProjects(true, 'include');
@@ -53,28 +54,28 @@ export function ProjectsPage() {
     <div className="page">
       <header className="page-header">
         <div className="titles">
-          <h1>Projects</h1>
-          <p className="subtitle">Everything your team is working on.</p>
+          <h1>{t('Projects')}</h1>
+          <p className="subtitle">{t('Everything your team is working on.')}</p>
         </div>
         {canCreate && (
           <div className="actions">
             {tab === 'templates' && (
               <button type="button" className="btn" onClick={() => setCreating('template')}>
-                <LayoutTemplate size={16} /> New template
+                <LayoutTemplate size={16} /> {t('New template')}
               </button>
             )}
             <button type="button" className="btn btn-primary" onClick={() => setCreating('project')}>
-              <Plus size={16} /> New project
+              <Plus size={16} /> {t('New project')}
             </button>
           </div>
         )}
       </header>
 
       <div className="tabs" role="tablist" style={{ marginBottom: 18 }}>
-        {TABS.map((t) => (
-          <button key={t.value} type="button" role="tab" className="tab" aria-selected={tab === t.value} onClick={() => setTab(t.value)}>
-            {t.label}
-            <span className="muted num">{counts[t.value]}</span>
+        {TABS.map((option) => (
+          <button key={option.value} type="button" role="tab" className="tab" aria-selected={tab === option.value} onClick={() => setTab(option.value)}>
+            {t(option.label)}
+            <span className="muted num">{counts[option.value]}</span>
           </button>
         ))}
       </div>
@@ -87,20 +88,20 @@ export function ProjectsPage() {
         <div className="card">
           <EmptyState
             icon={tab === 'templates' ? <LayoutTemplate size={22} /> : <FolderKanban size={22} />}
-            title={tab === 'current' ? 'No projects yet' : tab === 'templates' ? 'No templates yet' : `No ${tab} projects`}
+            title={tab === 'current' ? t('No projects yet') : tab === 'templates' ? t('No templates yet') : tab === 'completed' ? t('No completed projects') : t('No archived projects')}
             action={
               canCreate &&
               (tab === 'current' || tab === 'templates') && (
                 <button type="button" className="btn btn-primary" onClick={() => setCreating(tab === 'templates' ? 'template' : 'project')}>
-                  <Plus size={16} /> {tab === 'templates' ? 'Create a template' : 'Create a project'}
+                  <Plus size={16} /> {tab === 'templates' ? t('Create a template') : t('Create a project')}
                 </button>
               )
             }
           >
             {tab === 'current'
-              ? 'Projects group related tasks on a board and a timeline.'
+              ? t('Projects group related tasks on a board and a timeline.')
               : tab === 'templates'
-                ? 'A template is a ready-made plan (columns, labels and tasks) to start new projects from. You can also save any project as a template from its menu.'
+                ? t('A template is a ready-made plan (columns, labels and tasks) to start new projects from. You can also save any project as a template from its menu.')
                 : undefined}
           </EmptyState>
         </div>
@@ -136,6 +137,7 @@ function ProjectCard({ project, owner, onUseTemplate }: { project: Project; owne
       overdue: project.counts.overdue,
     },
     today,
+    tr(),
   );
   return (
     <Link to={`/projects/${project.id}`} className="card project-card">
@@ -143,17 +145,18 @@ function ProjectCard({ project, owner, onUseTemplate }: { project: Project; owne
         <ProjectDot color={project.color} size="lg" />
         <h2 className="truncate">{project.name}</h2>
         {project.visibility === 'private' && (
-          <span className="badge" title="Private: only the people on it and admins can see it">
-            <Lock size={11} aria-hidden /> Private
+          <span className="badge" title={t('Private: only the people on it and admins can see it')}>
+            <Lock size={11} aria-hidden /> {t('Private')}
           </span>
         )}
-        {project.status !== 'active' && !project.isTemplate && <span className="badge">{PROJECT_STATUS_LABELS[project.status]}</span>}
+        {project.status !== 'active' && !project.isTemplate && <span className="badge">{t(PROJECT_STATUS_LABELS[project.status])}</span>}
       </div>
-      <p className="project-card-desc">{project.description || <span className="muted">No description</span>}</p>
+      <p className="project-card-desc">{project.description || <span className="muted">{t('No description')}</span>}</p>
       {project.isTemplate ? (
         <div className="project-card-stats">
           <span className="secondary">
-            {plural(project.counts.total, 'task')} · {plural(project.columns.length, 'column')} · {plural(project.labels.length, 'label')}
+            {tn('{count} task', '{count} tasks', project.counts.total)} · {tn('{count} column', '{count} columns', project.columns.length)} ·{' '}
+            {tn('{count} label', '{count} labels', project.labels.length)}
           </span>
           {onUseTemplate && (
             <button
@@ -165,25 +168,25 @@ function ProjectCard({ project, owner, onUseTemplate }: { project: Project; owne
                 onUseTemplate();
               }}
             >
-              <LayoutTemplate size={14} /> Use template
+              <LayoutTemplate size={14} /> {t('Use template')}
             </button>
           )}
         </div>
       ) : (
         <>
       <div className="meter-row">
-        <Meter value={progress} tone={healthTone(health)} label={`${project.name} progress`} />
+        <Meter value={progress} tone={healthTone(health)} label={t('{name} progress', { name: project.name })} />
         <span className="meter-value">{percent(progress)}</span>
       </div>
       <div className="project-card-stats">
         <HealthBadge health={health} reason={reason} />
         <span className="secondary">
-          {project.counts.done}/{plural(project.counts.total, 'task')} done
+          {tn('{done}/{count} task done', '{done}/{count} tasks done', project.counts.total, { done: project.counts.done })}
         </span>
         {project.counts.overdue > 0 && (
           <span className="row" style={{ gap: 5 }}>
             <StatusGlyph tone="critical" size={13} />
-            {project.counts.overdue} overdue
+            {t('{count} overdue', { count: project.counts.overdue })}
           </span>
         )}
       </div>
@@ -192,10 +195,10 @@ function ProjectCard({ project, owner, onUseTemplate }: { project: Project; owne
       <div className="project-card-foot">
         <span className="row" style={{ gap: 6 }}>
           <Avatar user={owner ?? null} size="xs" title={null} />
-          <span className="secondary truncate">{owner?.name ?? 'No owner'}</span>
+          <span className="secondary truncate">{owner?.name ?? t('No owner')}</span>
         </span>
         <span className="spacer" />
-        {project.dueDate && <span className="secondary num">Due {formatDate(project.dueDate, today)}</span>}
+        {project.dueDate && <span className="secondary num">{t('Due {date}', { date: formatDate(project.dueDate, today) })}</span>}
       </div>
     </Link>
   );

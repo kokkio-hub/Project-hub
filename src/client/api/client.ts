@@ -1,4 +1,5 @@
 import { localToday } from '../../shared/dates';
+import { currentLang, t } from '../i18n';
 import type { ApiErrorBody } from '../../shared/types';
 
 export class ApiError extends Error {
@@ -41,6 +42,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     'X-Requested-With': 'fetch',
     'X-Client-Date': localToday(),
     'X-Client-Tz-Offset': String(-new Date().getTimezoneOffset()),
+    'X-Client-Lang': currentLang(),
   };
   Object.assign(headers, options.headers);
   let body: string | Blob | undefined;
@@ -63,7 +65,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     });
   } catch (error) {
     if ((error as Error).name === 'AbortError') throw error;
-    throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
+    throw new ApiError(0, t('Can’t reach the server. Check your connection and try again.'));
   }
 
   if (response.status === 204) return undefined as T;
@@ -72,11 +74,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (!response.ok) {
     const error = new ApiError(
       response.status,
-      data?.error ?? `The server returned an error (${response.status}).`,
+      data?.error ?? t('The server returned an error ({status}).', { status: String(response.status) }),
       data?.fields ?? {},
     );
     const isAuthCall = path.startsWith('/auth/');
-    if (!isAuthCall && (response.status === 401 || (response.status === 403 && /new password/i.test(error.message)))) {
+    if (!isAuthCall && (response.status === 401 || (response.status === 403 && data?.code === 'password_change_required'))) {
       authFailureListener?.(error);
     }
     throw error;
@@ -87,5 +89,5 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return 'Something went wrong.';
+  return t('Something went wrong.');
 }

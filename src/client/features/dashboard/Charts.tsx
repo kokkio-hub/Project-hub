@@ -3,6 +3,7 @@ import { TASK_STATUS_LABELS, type ThroughputWeek, type User, type WorkloadRow } 
 import { Avatar } from '../../components/Avatar';
 import { StatusGlyph } from '../../components/Icons';
 import { formatDate } from '../../lib/format';
+import { t } from '../../i18n';
 
 /** Width of an element, kept up to date as it resizes. */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -86,24 +87,25 @@ export function ThroughputChart({ weeks }: { weeks: ThroughputWeek[] }) {
 
   const describe = (w: ThroughputWeek, i: number) => (
     <>
-      <div className="tooltip-value">{w.completed} completed</div>
+      <div className="tooltip-value">{t('{count} completed', { count: w.completed })}</div>
       <div>
-        Week of {formatDate(w.weekStart)}
-        {i === lastIndex ? ' (so far)' : ''}
+        {i === lastIndex
+          ? t('Week of {date} (so far)', { date: formatDate(w.weekStart) })
+          : t('Week of {date}', { date: formatDate(w.weekStart) })}
       </div>
-      <div>{w.created} created</div>
+      <div>{t('{count} created', { count: w.created })}</div>
     </>
   );
 
   return (
     <div ref={ref} className="chart" onMouseLeave={() => setTip(null)}>
       {width > 0 && (
-        <svg width={width} height={labelBand + plotHeight + axisBand} role="img" aria-label="Tasks completed per week, last 8 weeks">
-          {ticks.map((t) => (
-            <g key={t}>
-              <line x1={left} x2={width - right} y1={y(t)} y2={y(t)} className={t === 0 ? 'chart-baseline' : 'chart-grid'} />
-              <text x={left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="chart-tick">
-                {t}
+        <svg width={width} height={labelBand + plotHeight + axisBand} role="img" aria-label={t('Tasks completed per week, last 8 weeks')}>
+          {ticks.map((tick) => (
+            <g key={tick}>
+              <line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} className={tick === 0 ? 'chart-baseline' : 'chart-grid'} />
+              <text x={left - 8} y={y(tick)} dy="0.32em" textAnchor="end" className="chart-tick">
+                {tick}
               </text>
             </g>
           ))}
@@ -126,7 +128,7 @@ export function ThroughputChart({ weeks }: { weeks: ThroughputWeek[] }) {
                 )}
                 {(!everyOther || (lastIndex - i) % 2 === 0) && (
                   <text x={cx} y={labelBand + plotHeight + 16} textAnchor="middle" className="chart-tick">
-                    {i === lastIndex ? 'This wk' : formatDate(w.weekStart)}
+                    {i === lastIndex ? t('This wk') : formatDate(w.weekStart)}
                   </text>
                 )}
                 {/* Hit target: the whole column slot, larger than the mark. */}
@@ -138,7 +140,11 @@ export function ThroughputChart({ weeks }: { weeks: ThroughputWeek[] }) {
                   fill="transparent"
                   tabIndex={0}
                   role="img"
-                  aria-label={`Week of ${formatDate(w.weekStart)}: ${w.completed} completed, ${w.created} created`}
+                  aria-label={t('Week of {date}: {completed} completed, {created} created', {
+                    date: formatDate(w.weekStart),
+                    completed: w.completed,
+                    created: w.created,
+                  })}
                   onMouseMove={(e) => {
                     setFocus(i);
                     setTip({ x: e.clientX, y: e.clientY, content: describe(w, i) });
@@ -169,17 +175,16 @@ export function ThroughputTable({ weeks }: { weeks: ThroughputWeek[] }) {
     <table className="table compact-table">
       <thead>
         <tr>
-          <th>Week of</th>
-          <th className="num">Completed</th>
-          <th className="num">Created</th>
+          <th>{t('Week of')}</th>
+          <th className="num">{t('Completed')}</th>
+          <th className="num">{t('Created')}</th>
         </tr>
       </thead>
       <tbody>
         {[...weeks].reverse().map((w, i) => (
           <tr key={w.weekStart}>
             <td>
-              {formatDate(w.weekStart)}
-              {i === 0 ? ' (this week)' : ''}
+              {i === 0 ? t('{date} (this week)', { date: formatDate(w.weekStart) }) : formatDate(w.weekStart)}
             </td>
             <td className="num">{w.completed}</td>
             <td className="num">{w.created}</td>
@@ -202,7 +207,7 @@ export function WorkloadLegend() {
       {STAGES.map((s) => (
         <span key={s}>
           <span className="legend-swatch" style={{ background: `var(--stage-${s})` }} />
-          {TASK_STATUS_LABELS[s]}
+          {t(TASK_STATUS_LABELS[s])}
         </span>
       ))}
     </div>
@@ -240,7 +245,12 @@ export function WorkloadChart({ rows, usersById }: { rows: WorkloadRow[]; usersB
             </div>
             <div className="workload-bar" ref={row === rows[0] ? ref : undefined}>
               {width > 0 && (
-                <svg width={width} height={barH + 4} role="img" aria-label={`${user.name}: ${row.todo} to do, ${row.in_progress} in progress, ${row.review} in review`}>
+                <svg width={width} height={barH + 4} role="img" aria-label={t('{name}: {todo} to do, {doing} in progress, {review} in review', {
+                    name: user.name,
+                    todo: row.todo,
+                    doing: row.in_progress,
+                    review: row.review,
+                  })}>
                   {segments.map((seg, i) => {
                     const last = i === segments.length - 1;
                     // 2px surface gap between touching segments.
@@ -260,7 +270,7 @@ export function WorkloadChart({ rows, usersById }: { rows: WorkloadRow[]; usersB
                             content: (
                               <>
                                 <div className="tooltip-value">
-                                  {seg.value} {TASK_STATUS_LABELS[seg.stage].toLowerCase()}
+                                  {seg.value} {t(TASK_STATUS_LABELS[seg.stage]).toLowerCase()}
                                 </div>
                                 <div>{user.name}</div>
                               </>
@@ -279,9 +289,9 @@ export function WorkloadChart({ rows, usersById }: { rows: WorkloadRow[]; usersB
             </div>
             <div className="workload-flags">
               {row.overdue > 0 && (
-                <span className="chip chip-overdue" title={`${row.overdue} overdue`}>
+                <span className="chip chip-overdue" title={t('{count} overdue', { count: row.overdue })}>
                   <StatusGlyph tone="critical" size={12} />
-                  {row.overdue} overdue
+                  {t('{count} overdue', { count: row.overdue })}
                 </span>
               )}
             </div>
@@ -298,12 +308,12 @@ export function WorkloadTable({ rows, usersById }: { rows: WorkloadRow[]; usersB
     <table className="table compact-table">
       <thead>
         <tr>
-          <th>Person</th>
-          <th className="num">To do</th>
-          <th className="num">In progress</th>
-          <th className="num">In review</th>
-          <th className="num">Overdue</th>
-          <th className="num">Due this week</th>
+          <th>{t('Person')}</th>
+          <th className="num">{t('To do')}</th>
+          <th className="num">{t('In progress')}</th>
+          <th className="num">{t('In review')}</th>
+          <th className="num">{t('Overdue')}</th>
+          <th className="num">{t('Due this week')}</th>
         </tr>
       </thead>
       <tbody>

@@ -7,6 +7,7 @@ import { DueChip } from '../../components/Bits';
 import { PriorityLabel, ProjectDot, StatusIcon } from '../../components/Icons';
 import { formatDate } from '../../lib/format';
 import { LabelList } from '../labels/Labels';
+import { t } from '../../i18n';
 
 type SortKey = 'title' | 'status' | 'priority' | 'assignee' | 'startDate' | 'dueDate' | 'project';
 
@@ -22,29 +23,29 @@ interface Props {
 
 /** Sortable table of tasks: the list view, and the accessible table twin of the board and timeline. */
 export function TaskTable({ tasks, usersById, projectsById, columns, labels, onOpenTask }: Props) {
-  const columnOf = (t: Task) => (columns ?? projectsById?.get(t.projectId)?.columns ?? []).find((c) => c.id === t.columnId);
-  const labelsOf = (t: Task) => labels ?? projectsById?.get(t.projectId)?.labels ?? [];
+  const columnOf = (task: Task) => (columns ?? projectsById?.get(task.projectId)?.columns ?? []).find((c) => c.id === task.columnId);
+  const labelsOf = (task: Task) => labels ?? projectsById?.get(task.projectId)?.labels ?? [];
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'dueDate', dir: 1 });
   const today = localToday();
 
   const sorted = useMemo(() => {
     const name = (id: number | null) => (id ? (usersById.get(id)?.name ?? '') : '￿');
-    const value = (t: Task): string | number => {
+    const value = (task: Task): string | number => {
       switch (sort.key) {
         case 'title':
-          return t.title.toLowerCase();
+          return task.title.toLowerCase();
         case 'status':
-          return TASK_STATUSES.indexOf(t.status) * 1000 + (columnOf(t)?.position ?? 0);
+          return TASK_STATUSES.indexOf(task.status) * 1000 + (columnOf(task)?.position ?? 0);
         case 'priority':
-          return -TASK_PRIORITIES.indexOf(t.priority);
+          return -TASK_PRIORITIES.indexOf(task.priority);
         case 'assignee':
-          return name(t.assigneeId).toLowerCase();
+          return name(task.assigneeId).toLowerCase();
         case 'startDate':
-          return t.startDate ?? '￿';
+          return task.startDate ?? '￿';
         case 'dueDate':
-          return t.dueDate ?? '￿';
+          return task.dueDate ?? '￿';
         case 'project':
-          return (projectsById?.get(t.projectId)?.name ?? '').toLowerCase();
+          return (projectsById?.get(task.projectId)?.name ?? '').toLowerCase();
       }
     };
     return [...tasks].sort((a, b) => {
@@ -78,33 +79,33 @@ export function TaskTable({ tasks, usersById, projectsById, columns, labels, onO
       <table className="table">
         <thead>
           <tr>
-            {header('title', 'Task')}
-            {projectsById && header('project', 'Project')}
-            {header('status', 'Column')}
-            {header('priority', 'Priority')}
-            {header('assignee', 'Assignee')}
-            {header('startDate', 'Start')}
-            {header('dueDate', 'Due')}
+            {header('title', t('Task'))}
+            {projectsById && header('project', t('Project'))}
+            {header('status', t('Column'))}
+            {header('priority', t('Priority'))}
+            {header('assignee', t('Assignee'))}
+            {header('startDate', t('Start'))}
+            {header('dueDate', t('Due'))}
           </tr>
         </thead>
         <tbody>
-          {sorted.map((t) => {
-            const project = projectsById?.get(t.projectId);
+          {sorted.map((task) => {
+            const project = projectsById?.get(task.projectId);
             return (
               <tr
-                key={t.id}
+                key={task.id}
                 className="clickable"
-                onClick={() => onOpenTask(t.id)}
+                onClick={() => onOpenTask(task.id)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') onOpenTask(t.id);
+                  if (e.key === 'Enter') onOpenTask(task.id);
                 }}
                 tabIndex={0}
               >
                 <td style={{ maxWidth: 420 }}>
-                  <span className={`truncate ${t.status === 'done' ? 'secondary' : ''}`} style={{ display: 'block', fontWeight: 520 }}>
-                    {t.title}
+                  <span className={`truncate ${task.status === 'done' ? 'secondary' : ''}`} style={{ display: 'block', fontWeight: 520 }}>
+                    {task.title}
                   </span>
-                  {t.labelIds.length > 0 && <LabelList ids={t.labelIds} labels={labelsOf(t)} />}
+                  {task.labelIds.length > 0 && <LabelList ids={task.labelIds} labels={labelsOf(task)} />}
                 </td>
                 {projectsById && (
                   <td>
@@ -118,19 +119,19 @@ export function TaskTable({ tasks, usersById, projectsById, columns, labels, onO
                 )}
                 <td>
                   <span className="status-label">
-                    <StatusIcon status={t.status} />
-                    {columnOf(t)?.name ?? TASK_STATUS_LABELS[t.status]}
+                    <StatusIcon status={task.status} />
+                    {columnOf(task)?.name ?? t(TASK_STATUS_LABELS[task.status])}
                   </span>
                 </td>
                 <td>
-                  <PriorityLabel priority={t.priority} />
+                  <PriorityLabel priority={task.priority} />
                 </td>
                 <td>
-                  <Person user={t.assigneeId ? usersById.get(t.assigneeId) : null} muted={!t.assigneeId} />
+                  <Person user={task.assigneeId ? usersById.get(task.assigneeId) : null} muted={!task.assigneeId} />
                 </td>
-                <td className="date secondary">{formatDate(t.startDate, today) || '–'}</td>
+                <td className="date secondary">{formatDate(task.startDate, today) || '–'}</td>
                 <td className="date">
-                  {t.dueDate ? <DueChip dueDate={t.dueDate} status={t.status} today={today} showIcon={false} /> : <span className="muted">–</span>}
+                  {task.dueDate ? <DueChip dueDate={task.dueDate} status={task.status} today={today} showIcon={false} /> : <span className="muted">–</span>}
                 </td>
               </tr>
             );

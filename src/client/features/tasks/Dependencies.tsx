@@ -10,6 +10,7 @@ import { ProjectDot, StatusGlyph, StatusIcon } from '../../components/Icons';
 import { Popover } from '../../components/Popover';
 import { formatDate } from '../../lib/format';
 import { useDebounced, useOpenTask } from '../../lib/hooks';
+import { t } from '../../i18n';
 
 /** The day a task starts, for comparing with what it waits for. */
 function startOf(task: Pick<Task, 'startDate' | 'dueDate'>): string | null {
@@ -52,16 +53,16 @@ export function Dependencies({
         </button>
         <DueChip dueDate={ref.dueDate} status={ref.status} showIcon={false} />
         {conflict && (
-          <span className="dep-warning" title={`This task starts before “${ref.title}” is due (${formatDate(ref.dueDate!)})`}>
+          <span className="dep-warning" title={t('This task starts before “{title}” is due ({date})', { title: ref.title, date: formatDate(ref.dueDate!) })}>
             <StatusGlyph tone="warning" size={13} />
-            <span className="sr-only">Starts before this is due</span>
+            <span className="sr-only">{t('Starts before this is due')}</span>
           </span>
         )}
         {kind === 'blocker' && !readOnly && (
           <button
             type="button"
             className="icon-btn icon-btn-sm"
-            aria-label={`Stop waiting for ${ref.title}`}
+            aria-label={t('Stop waiting for {title}', { title: ref.title })}
             onClick={() => remove.mutate(ref.id, { onError: (e) => toast.error(errorMessage(e)) })}
           >
             <X size={13} />
@@ -75,7 +76,7 @@ export function Dependencies({
 
   return (
     <section className="drawer-section">
-      <h3 className="section-title">Dependencies</h3>
+      <h3 className="section-title">{t('Dependencies')}</h3>
       {deps.isPending ? (
         <Spinner />
       ) : (
@@ -84,20 +85,24 @@ export function Dependencies({
             <div className="alert alert-warning">
               <StatusGlyph tone="warning" size={16} />
               <span>
-                This task is planned to start before{' '}
-                {conflicts.length === 1 ? `“${conflicts[0]!.title}” is due` : `${conflicts.length} tasks it waits for are due`}. Move its dates, or
-                check the plan.
+                {conflicts.length === 1
+                  ? t('This task is planned to start before “{title}” is due. Move its dates, or check the plan.', {
+                      title: conflicts[0]!.title,
+                    })
+                  : t('This task is planned to start before {count} tasks it waits for are due. Move its dates, or check the plan.', {
+                      count: conflicts.length,
+                    })}
               </span>
             </div>
           )}
           <div>
-            <div className="dep-heading">Waiting for</div>
-            {blockedBy.length > 0 ? <ul className="dep-list">{blockedBy.map((b) => row(b, 'blocker'))}</ul> : <p className="muted dep-none">Nothing.</p>}
+            <div className="dep-heading">{t('Waiting for')}</div>
+            {blockedBy.length > 0 ? <ul className="dep-list">{blockedBy.map((b) => row(b, 'blocker'))}</ul> : <p className="muted dep-none">{t('Nothing.')}</p>}
             {!readOnly && <AddBlocker task={task} exclude={new Set([task.id, ...blockedBy.map((b) => b.id), ...blocking.map((b) => b.id)])} />}
           </div>
           {blocking.length > 0 && (
             <div>
-              <div className="dep-heading">Blocking</div>
+              <div className="dep-heading">{t('Blocking')}</div>
               <ul className="dep-list">{blocking.map((b) => row(b, 'blocked'))}</ul>
             </div>
           )}
@@ -113,15 +118,15 @@ function AddBlocker({ task, exclude }: { task: Task; exclude: Set<number> }) {
   const search = useSearch(debounced);
   const add = useAddBlocker(task.id);
   const toast = useToast();
-  const results = (search.data?.tasks ?? []).filter((t) => !exclude.has(t.id));
+  const results = (search.data?.tasks ?? []).filter((task) => !exclude.has(task.id));
 
   return (
     <Popover
-      label="Add a task this one waits for"
+      label={t('Add a task this one waits for')}
       width={340}
       trigger={(props) => (
         <button type="button" className="btn btn-ghost btn-sm" {...props}>
-          <Plus size={14} /> Add a task it waits for
+          <Plus size={14} /> {t('Add a task it waits for')}
         </button>
       )}
     >
@@ -129,13 +134,13 @@ function AddBlocker({ task, exclude }: { task: Task; exclude: Set<number> }) {
         <div className="picker">
           <input
             className="input input-sm"
-            placeholder="Search tasks by name or #number…"
+            placeholder={t('Search tasks by name or #number…')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search tasks"
+            aria-label={t('Search tasks')}
             data-autofocus
           />
-          <ul className="picker-list" role="listbox" aria-label="Tasks">
+          <ul className="picker-list" role="listbox" aria-label={t('Tasks')}>
             {results.map((r) => (
               <li key={r.id}>
                 <button
@@ -159,10 +164,10 @@ function AddBlocker({ task, exclude }: { task: Task; exclude: Set<number> }) {
                 </button>
               </li>
             ))}
-            {debounced.trim() && !search.isFetching && results.length === 0 && <li className="muted picker-empty">No matching tasks.</li>}
+            {debounced.trim() && !search.isFetching && results.length === 0 && <li className="muted picker-empty">{t('No matching tasks.')}</li>}
             {!debounced.trim() && (
               <li className="muted picker-empty">
-                <Link2 size={13} aria-hidden /> Type to find the task that has to be finished first.
+                <Link2 size={13} aria-hidden /> {t('Type to find the task that has to be finished first.')}
               </li>
             )}
           </ul>

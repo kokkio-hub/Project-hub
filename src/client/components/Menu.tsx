@@ -26,10 +26,10 @@ export function Menu({ trigger, children, align = 'end', placement = 'below' }: 
   const [open, setOpen] = useState(false);
 
   const position = useCallback(() => {
-    const t = triggerRef.current;
+    const trigger = triggerRef.current;
     const m = menuRef.current;
-    if (!t || !m) return;
-    const r = t.getBoundingClientRect();
+    if (!trigger || !m) return;
+    const r = trigger.getBoundingClientRect();
     const width = m.offsetWidth;
     const height = m.offsetHeight;
     let left = align === 'end' ? r.right - width : r.left;

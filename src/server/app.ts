@@ -10,7 +10,7 @@ import { errorHandler } from './lib/errors.js';
 import { EventHub } from './lib/events.js';
 import { BackgroundJobs } from './lib/jobs.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
-import { authenticate, clientClock, requireCustomHeader } from './auth/middleware.js';
+import { authenticate, clientClock, clientLanguage, requireCustomHeader } from './auth/middleware.js';
 import { authRouter } from './routes/auth.js';
 import { commentsRouter, taskCommentsRouter } from './routes/comments.js';
 import { miscRouter } from './routes/misc.js';
@@ -89,6 +89,7 @@ export function createApp({
   api.use(clientClock);
   api.use(requireCustomHeader);
   api.use(authenticate(ctx));
+  api.use(clientLanguage(ctx));
   api.use((_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();

@@ -3,6 +3,7 @@ import { nowIso } from '../db/index.js';
 import type { ColorName, Project, ProjectStatus, ProjectVisibility } from '../../shared/types.js';
 import { viewerParams, visibleProjectSql, type Viewer } from '../services/permissions.js';
 import { columnsByProject, insertDefaultColumns } from './columns.js';
+import type { Translator } from '../../shared/i18n/core.js';
 import { labelsByProject } from './labels.js';
 
 export interface ProjectRow {
@@ -132,7 +133,7 @@ export interface ProjectInput {
 }
 
 /** Creates a project with the standard four board columns (unless `withColumns` is false). */
-export function insertProject(db: DB, input: ProjectInput, options: { withColumns?: boolean } = {}): number {
+export function insertProject(db: DB, input: ProjectInput, options: { withColumns?: boolean; tr?: Translator } = {}): number {
   const now = nowIso();
   const result = db
     .prepare(
@@ -155,7 +156,7 @@ export function insertProject(db: DB, input: ProjectInput, options: { withColumn
       now,
     });
   const id = Number(result.lastInsertRowid);
-  if (options.withColumns !== false) insertDefaultColumns(db, id);
+  if (options.withColumns !== false) insertDefaultColumns(db, id, options.tr);
   return id;
 }
 

@@ -9,6 +9,7 @@ import qrcode from 'qrcode-generator';
 import { parse, zColor, zEmail, zName, zPassword, zTitle } from '../lib/validation.js';
 import { countUsers, getUserByEmail, getUserById, insertUser, isPending, toMe, updateUser, type UserRow } from '../repos/users.js';
 import { NOTIFY_EMAIL_MODES, type AppStatus, type LinkInfo, type SessionInfo, type TwoFactorChallenge } from '../../shared/types.js';
+import { LANGUAGES } from '../../shared/i18n/core.js';
 import { clearSessionCookie, requireAuth, requireSession, setSessionCookie } from '../auth/middleware.js';
 import { fakeVerify, hashPassword, verifyPassword } from '../auth/password.js';
 import {
@@ -22,6 +23,7 @@ import {
 } from '../auth/sessions.js';
 import { deleteUserTokens, findValidToken, latestToken } from '../auth/tokens.js';
 import { generateRecoveryCodes, generateSecret, hashRecoveryCode, otpauthUrl, verifyCode } from '../auth/totp.js';
+import { trFor } from '../i18n/index.js';
 import { issueInvitation, publicBaseUrl, sendPasswordResetLink } from '../services/access.js';
 
 const loginSchema = z.object({
@@ -36,6 +38,7 @@ const profileSchema = z.object({
   title: zTitle.optional(),
   color: zColor.optional(),
   notifyEmail: z.enum(NOTIFY_EMAIL_MODES, 'Choose instant, daily or off').optional(),
+  language: z.enum(LANGUAGES, 'Choose English or Nederlands').nullable().optional(),
 });
 
 const challengeSchema = z.object({
@@ -145,6 +148,7 @@ export function authRouter(ctx: AppContext): Router {
       emailEnabled: mailer.enabled,
       passwordResetEnabled: passwordResetEnabled(),
       uploadLimitBytes: config.maxUploadBytes,
+      defaultLanguage: config.defaultLanguage,
     };
     res.json(body);
   });
@@ -239,7 +243,7 @@ export function authRouter(ctx: AppContext): Router {
     const sessions: SessionInfo[] = listUserSessions(db, req.user!.id).map((s) => ({
       id: s.id,
       current: s.id === req.sessionId,
-      device: describeDevice(s.user_agent),
+      device: describeDevice(s.user_agent, trFor(req.lang)),
       ip: s.ip,
       createdAt: s.created_at,
       lastActiveAt: s.last_active_at ?? s.last_seen_at,
@@ -445,9 +449,9 @@ export function authRouter(ctx: AppContext): Router {
       if (pending) {
         // They were invited but never joined (perhaps the link expired): send a fresh invitation.
         const inviter = recent?.created_by ? (getUserById(db, recent.created_by) ?? null) : null;
-        await issueInvitation(ctx, { user, invitedBy: inviter, baseUrl: config.appUrl!, sendEmail: true });
+        await issueInvitation(ctx, { user, invitedBy: inviter, baseUrl: config.appUrl!, sendEmail: true, lang: req.lang });
       } else {
-        await sendPasswordResetLink(ctx, { user, requestedBy: null, baseUrl: config.appUrl! });
+        await sendPasswordResetLink(ctx, { user, requestedBy: null, baseUrl: config.appUrl!, lang: req.lang });
       }
     });
   });

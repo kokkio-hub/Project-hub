@@ -12,6 +12,7 @@ import { nextCopyMessage } from '../features/board/KanbanBoard';
 import { NewTaskModal } from '../features/tasks/NewTaskModal';
 import { localDateOf } from '../lib/format';
 import { useOpenTask } from '../lib/hooks';
+import { t, tn } from '../i18n';
 
 interface Section {
   key: string;
@@ -25,7 +26,7 @@ const byDueThenPriority = (a: Task, b: Task) =>
   a.id - b.id;
 
 export function MyTasksPage() {
-  useDocumentTitle('My tasks');
+  useDocumentTitle(t('My tasks'));
   const me = useCurrentUser();
   const tasks = useTasks({ assigneeId: 'me' });
   const { data: projects } = useProjects(true);
@@ -38,39 +39,39 @@ export function MyTasksPage() {
 
   const sections = useMemo<Section[]>(() => {
     const weekEnd = addDays(startOfWeek(today), 6);
-    const open = (tasks.data ?? []).filter((t) => t.status !== 'done').sort(byDueThenPriority);
+    const open = (tasks.data ?? []).filter((task) => task.status !== 'done').sort(byDueThenPriority);
     const recentDone = (tasks.data ?? [])
-      .filter((t) => t.status === 'done' && t.completedAt && localDateOf(t.completedAt) >= addDays(today, -14))
+      .filter((task) => task.status === 'done' && task.completedAt && localDateOf(task.completedAt) >= addDays(today, -14))
       .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
     const list: Section[] = [
-      { key: 'overdue', title: 'Overdue', tasks: open.filter((t) => t.dueDate && t.dueDate < today) },
-      { key: 'today', title: 'Today', tasks: open.filter((t) => t.dueDate === today) },
-      { key: 'week', title: 'Later this week', tasks: open.filter((t) => t.dueDate && t.dueDate > today && t.dueDate <= weekEnd) },
-      { key: 'later', title: 'Later', tasks: open.filter((t) => t.dueDate && t.dueDate > weekEnd) },
-      { key: 'none', title: 'No due date', tasks: open.filter((t) => !t.dueDate) },
+      { key: 'overdue', title: t('Overdue'), tasks: open.filter((task) => task.dueDate && task.dueDate < today) },
+      { key: 'today', title: t('Today'), tasks: open.filter((task) => task.dueDate === today) },
+      { key: 'week', title: t('Later this week'), tasks: open.filter((task) => task.dueDate && task.dueDate > today && task.dueDate <= weekEnd) },
+      { key: 'later', title: t('Later'), tasks: open.filter((task) => task.dueDate && task.dueDate > weekEnd) },
+      { key: 'none', title: t('No due date'), tasks: open.filter((task) => !task.dueDate) },
     ];
-    if (showDone) list.push({ key: 'done', title: 'Completed in the last two weeks', tasks: recentDone });
+    if (showDone) list.push({ key: 'done', title: t('Completed in the last two weeks'), tasks: recentDone });
     return list.filter((s) => s.tasks.length > 0);
   }, [tasks.data, today, showDone]);
 
-  const openCount = (tasks.data ?? []).filter((t) => t.status !== 'done').length;
+  const openCount = (tasks.data ?? []).filter((task) => task.status !== 'done').length;
 
   return (
     <div className="page">
       <header className="page-header">
         <div className="titles">
-          <h1>My tasks</h1>
+          <h1>{t('My tasks')}</h1>
           <p className="subtitle">
-            {openCount === 0 ? 'Nothing assigned to you right now.' : `${openCount} open ${openCount === 1 ? 'task' : 'tasks'} assigned to you.`}
+            {openCount === 0 ? t('Nothing assigned to you right now.') : tn('{count} open task assigned to you.', '{count} open tasks assigned to you.', openCount)}
           </p>
         </div>
         <div className="actions">
           <label className="row" style={{ gap: 6, fontSize: 'var(--text-sm)', color: 'var(--text-2)', cursor: 'pointer' }}>
             <input type="checkbox" className="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
-            Show recently completed
+            {t('Show recently completed')}
           </label>
           <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-            <Plus size={16} /> New task
+            <Plus size={16} /> {t('New task')}
           </button>
         </div>
       </header>
@@ -81,8 +82,8 @@ export function MyTasksPage() {
         <ErrorNotice error={tasks.error} onRetry={() => void tasks.refetch()} />
       ) : sections.length === 0 ? (
         <div className="card">
-          <EmptyState icon={<CircleCheckBig size={22} />} title="You're all caught up">
-            Tasks assigned to you across all projects show up here, sorted by due date.
+          <EmptyState icon={<CircleCheckBig size={22} />} title={t('You’re all caught up')}>
+            {t('Tasks assigned to you across all projects show up here, sorted by due date.')}
           </EmptyState>
         </div>
       ) : (
@@ -126,14 +127,14 @@ function MyTaskRow({ task, project, today, onOpen }: { task: Task; project: Proj
         className="checkbox"
         checked={done}
         disabled={readOnly}
-        aria-label={done ? `Reopen ${task.title}` : `Mark ${task.title} as done`}
+        aria-label={done ? t('Reopen {title}', { title: task.title }) : t('Mark {title} as done', { title: task.title })}
         onClick={(e) => e.stopPropagation()}
         onChange={() =>
           update.mutate(
             { id: task.id, patch: { status: done ? 'todo' : 'done' } },
             {
               onSuccess: (result) => {
-                if (!done) toast.success(result.next ? `Completed. ${nextCopyMessage(result.next)}` : `Completed “${task.title}”`);
+                if (!done) toast.success(result.next ? t('Completed. {next}', { next: nextCopyMessage(result.next) }) : t('Completed “{title}”', { title: task.title }));
               },
               onError: (e) => toast.error(errorMessage(e)),
             },

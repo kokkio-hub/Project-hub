@@ -6,6 +6,8 @@ import { ApiError, errorMessage } from '../api/client';
 import { useChangePassword, useLogin, useLogout, useRequestPasswordReset, useSetup, useVerifyLogin } from '../api/queries';
 import { ErrorNotice, Spinner } from '../components/Feedback';
 import { Field, PasswordInput } from '../components/Form';
+import { t, tx, useLanguage } from '../i18n';
+import { LANGUAGE_NAMES, LANGUAGES } from '../../shared/i18n/core';
 
 export function AuthCard({ appName, children }: { appName: string; children: ReactNode }) {
   return (
@@ -19,7 +21,29 @@ export function AuthCard({ appName, children }: { appName: string; children: Rea
         </div>
         {children}
       </main>
+      <LanguageSwitch />
     </div>
+  );
+}
+
+/** English / Nederlands, below the sign-in card. Remembered in this browser. */
+export function LanguageSwitch() {
+  const { lang, setLang } = useLanguage();
+  return (
+    <nav className="language-switch" aria-label={t('Language')}>
+      {LANGUAGES.map((code) => (
+        <button
+          key={code}
+          type="button"
+          className="link-button"
+          lang={code}
+          aria-current={lang === code ? 'true' : undefined}
+          onClick={() => setLang(code)}
+        >
+          {LANGUAGE_NAMES[code]}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -59,15 +83,15 @@ export function TwoFactorStep({ challenge, onBack, onDone }: { challenge: string
       <AuthIcon>
         <ShieldCheck size={22} />
       </AuthIcon>
-      <h1>Enter your code</h1>
+      <h1>{t('Enter your code')}</h1>
       <p className="lead">
         {recovery
-          ? 'Type one of the recovery codes you saved when you set up two-factor sign-in.'
-          : 'Open your authenticator app and type the 6-digit code it shows for this account.'}
+          ? t('Type one of the recovery codes you saved when you set up two-factor sign-in.')
+          : t('Open your authenticator app and type the 6-digit code it shows for this account.')}
       </p>
       <form onSubmit={submit} noValidate>
         {verify.error && !fields.code && <ErrorNotice error={verify.error} />}
-        <Field label={recovery ? 'Recovery code' : 'Code'} htmlFor="login-code" error={fields.code}>
+        <Field label={recovery ? t('Recovery code') : t('Code')} htmlFor="login-code" error={fields.code}>
           <input
             id="login-code"
             className="input mono code-input"
@@ -85,11 +109,11 @@ export function TwoFactorStep({ challenge, onBack, onDone }: { challenge: string
         </Field>
         {expired ? (
           <button type="button" className="btn btn-primary btn-lg btn-block" onClick={onBack}>
-            Sign in again
+            {t('Sign in again')}
           </button>
         ) : (
           <SubmitButton pending={verify.isPending} disabled={!code.trim()}>
-            Verify and sign in
+            {t('Verify and sign in')}
           </SubmitButton>
         )}
       </form>
@@ -103,11 +127,11 @@ export function TwoFactorStep({ challenge, onBack, onDone }: { challenge: string
             verify.reset();
           }}
         >
-          {recovery ? 'Use the code from my app instead' : 'Lost your phone? Use a recovery code'}
+          {recovery ? t('Use the code from my app instead') : t('Lost your phone? Use a recovery code')}
         </button>
         {' · '}
         <button type="button" className="link-button" onClick={onBack}>
-          Back
+          {t('Back')}
         </button>
       </p>
     </>
@@ -123,7 +147,7 @@ export function LoginPage({ appName, passwordResetEnabled }: { appName: string; 
   const [challenge, setChallenge] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = `${forgot ? 'Reset password' : 'Sign in'} · ${appName}`;
+    document.title = `${forgot ? t('Reset password') : t('Sign in')} · ${appName}`;
   }, [appName, forgot]);
 
   // "Forgot password?" lives at ?forgot, so the back button returns to signing in.
@@ -172,11 +196,11 @@ export function LoginPage({ appName, passwordResetEnabled }: { appName: string; 
 
   return (
     <AuthCard appName={appName}>
-      <h1>Sign in</h1>
-      <p className="lead">Welcome back. Sign in with your work email.</p>
+      <h1>{t('Sign in')}</h1>
+      <p className="lead">{t('Welcome back. Sign in with your work email.')}</p>
       <form onSubmit={submit} noValidate>
         {login.error && <ErrorNotice error={login.error} />}
-        <Field label="Email" htmlFor="login-email">
+        <Field label={t('Email')} htmlFor="login-email">
           <input
             id="login-email"
             className="input"
@@ -191,7 +215,7 @@ export function LoginPage({ appName, passwordResetEnabled }: { appName: string; 
             autoFocus
           />
         </Field>
-        <Field label="Password" htmlFor="login-password">
+        <Field label={t('Password')} htmlFor="login-password">
           <PasswordInput
             id="login-password"
             autoComplete="current-password"
@@ -203,16 +227,16 @@ export function LoginPage({ appName, passwordResetEnabled }: { appName: string; 
             required
           />
         </Field>
-        <SubmitButton pending={login.isPending}>Sign in</SubmitButton>
+        <SubmitButton pending={login.isPending}>{t('Sign in')}</SubmitButton>
       </form>
       {passwordResetEnabled ? (
         <p className="auth-footnote">
           <button type="button" className="link-button" onClick={() => showForgot(true)}>
-            Forgot your password?
+            {t('Forgot your password?')}
           </button>
         </p>
       ) : (
-        <p className="auth-footnote">Forgot your password? Ask an admin to reset it for you.</p>
+        <p className="auth-footnote">{t('Forgot your password? Ask an admin to reset it for you.')}</p>
       )}
     </AuthCard>
   );
@@ -244,14 +268,16 @@ function ForgotPassword({
         <AuthIcon>
           <MailCheck size={22} />
         </AuthIcon>
-        <h1>Check your email</h1>
+        <h1>{t('Check your email')}</h1>
         <p className="lead">
-          If <strong>{sentTo}</strong> belongs to an account here, a link to choose a new password is on its way. The link
-          works for {RESET_LINK_MINUTES} minutes.
+          {tx('If {strong} belongs to an account here, a link to choose a new password is on its way. The link works for {minutes} minutes.', {
+            strong: <strong>{sentTo}</strong>,
+            minutes: RESET_LINK_MINUTES,
+          })}
         </p>
-        <p className="auth-note">Nothing after a few minutes? Check your spam folder, or ask an admin to reset your password.</p>
+        <p className="auth-note">{t('Nothing after a few minutes? Check your spam folder, or ask an admin to reset your password.')}</p>
         <button type="button" className="btn btn-lg btn-block" onClick={onBack}>
-          Back to sign in
+          {t('Back to sign in')}
         </button>
       </div>
     );
@@ -259,11 +285,11 @@ function ForgotPassword({
 
   return (
     <>
-      <h1>Reset your password</h1>
-      <p className="lead">Enter the email address you sign in with. We'll send you a link to choose a new password.</p>
+      <h1>{t('Reset your password')}</h1>
+      <p className="lead">{t('Enter the email address you sign in with. We’ll send you a link to choose a new password.')}</p>
       <form onSubmit={submit} noValidate>
         {request.error && !fields.email && <ErrorNotice error={request.error} />}
-        <Field label="Email" htmlFor="forgot-email" error={fields.email}>
+        <Field label={t('Email')} htmlFor="forgot-email" error={fields.email}>
           <input
             id="forgot-email"
             className="input"
@@ -278,11 +304,11 @@ function ForgotPassword({
             autoFocus
           />
         </Field>
-        <SubmitButton pending={request.isPending}>Email me a reset link</SubmitButton>
+        <SubmitButton pending={request.isPending}>{t('Email me a reset link')}</SubmitButton>
       </form>
       <p className="auth-footnote">
         <button type="button" className="link-button" onClick={onBack}>
-          Back to sign in
+          {t('Back to sign in')}
         </button>
       </p>
     </>
@@ -296,7 +322,7 @@ export function SetupPage({ appName }: { appName: string }) {
   const fields = setup.error instanceof ApiError ? setup.error.fields : {};
 
   useEffect(() => {
-    document.title = `Set up · ${appName}`;
+    document.title = `${t('Set up')} · ${appName}`;
   }, [appName]);
 
   const submit = (event: FormEvent) => {
@@ -317,16 +343,16 @@ export function SetupPage({ appName }: { appName: string }) {
 
   return (
     <AuthCard appName={appName}>
-      <h1>Create the admin account</h1>
+      <h1>{t('Create the admin account')}</h1>
       <p className="lead">
-        This is a fresh installation. The account you create now can add everyone else on your team.
+        {t('This is a fresh installation. The account you create now can add everyone else on your team.')}
       </p>
       <form onSubmit={submit} noValidate>
         {setup.error && !Object.keys(fields).length && <ErrorNotice error={setup.error} />}
-        <Field label="Your name" htmlFor="setup-name" error={fields.name}>
+        <Field label={t('Your name')} htmlFor="setup-name" error={fields.name}>
           <input id="setup-name" className="input" value={form.name} onChange={set('name')} autoComplete="name" autoFocus />
         </Field>
-        <Field label="Work email" htmlFor="setup-email" error={fields.email}>
+        <Field label={t('Work email')} htmlFor="setup-email" error={fields.email}>
           <input
             id="setup-email"
             className="input"
@@ -337,24 +363,24 @@ export function SetupPage({ appName }: { appName: string }) {
           />
         </Field>
         <Field
-          label="Password"
+          label={t('Password')}
           htmlFor="setup-password"
           error={fields.password}
-          hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+          hint={t('At least {count} characters.', { count: PASSWORD_MIN_LENGTH })}
         >
           <PasswordInput id="setup-password" value={form.password} onChange={set('password')} autoComplete="new-password" />
         </Field>
-        <Field label="Repeat password" htmlFor="setup-confirm" error={mismatch ? "The passwords don't match." : undefined}>
+        <Field label={t('Repeat password')} htmlFor="setup-confirm" error={mismatch ? t('The passwords don’t match.') : undefined}>
           <PasswordInput id="setup-confirm" value={form.confirm} onChange={set('confirm')} autoComplete="new-password" />
         </Field>
-        <SubmitButton pending={setup.isPending}>Create account and continue</SubmitButton>
+        <SubmitButton pending={setup.isPending}>{t('Create account and continue')}</SubmitButton>
       </form>
     </AuthCard>
   );
 }
 
 /** Password change form, used both for the forced first-sign-in change and on the account page. */
-export function ChangePasswordForm({ onDone, submitLabel = 'Update password' }: { onDone?: () => void; submitLabel?: string }) {
+export function ChangePasswordForm({ onDone, submitLabel }: { onDone?: () => void; submitLabel?: string }) {
   const change = useChangePassword();
   const [form, setForm] = useState({ current: '', next: '', confirm: '' });
   const [mismatch, setMismatch] = useState(false);
@@ -387,24 +413,24 @@ export function ChangePasswordForm({ onDone, submitLabel = 'Update password' }: 
   return (
     <form onSubmit={submit} noValidate className="stack" style={{ gap: 16 }}>
       {change.error && !Object.keys(fields).length && <ErrorNotice error={change.error} />}
-      <Field label="Current password" htmlFor="pw-current" error={fields.currentPassword}>
+      <Field label={t('Current password')} htmlFor="pw-current" error={fields.currentPassword}>
         <PasswordInput id="pw-current" value={form.current} onChange={set('current')} autoComplete="current-password" />
       </Field>
       <Field
-        label="New password"
+        label={t('New password')}
         htmlFor="pw-new"
         error={fields.newPassword}
-        hint={`At least ${PASSWORD_MIN_LENGTH} characters. Signing in elsewhere will end after the change.`}
+        hint={t('At least {count} characters. Signing in elsewhere will end after the change.', { count: PASSWORD_MIN_LENGTH })}
       >
         <PasswordInput id="pw-new" value={form.next} onChange={set('next')} autoComplete="new-password" />
       </Field>
-      <Field label="Repeat new password" htmlFor="pw-confirm" error={mismatch ? "The passwords don't match." : undefined}>
+      <Field label={t('Repeat new password')} htmlFor="pw-confirm" error={mismatch ? t('The passwords don’t match.') : undefined}>
         <PasswordInput id="pw-confirm" value={form.confirm} onChange={set('confirm')} autoComplete="new-password" />
       </Field>
       <div>
         <button type="submit" className="btn btn-primary" disabled={change.isPending}>
           {change.isPending && <Spinner size={16} />}
-          {submitLabel}
+          {submitLabel ?? t('Update password')}
         </button>
       </div>
     </form>
@@ -414,20 +440,21 @@ export function ChangePasswordForm({ onDone, submitLabel = 'Update password' }: 
 export function ForcedPasswordChangePage({ appName, user }: { appName: string; user: User }) {
   const logout = useLogout();
   useEffect(() => {
-    document.title = `Choose a password · ${appName}`;
+    document.title = `${t('Choose a password')} · ${appName}`;
   }, [appName]);
   return (
     <AuthCard appName={appName}>
-      <h1>Choose your own password</h1>
+      <h1>{t('Choose your own password')}</h1>
       <p className="lead">
-        Hi {user.name.split(' ')[0]}, you signed in with a temporary password. Pick a new one that only you know to
-        continue.
+        {t('Hi {name}, you signed in with a temporary password. Pick a new one that only you know to continue.', {
+          name: user.name.split(' ')[0],
+        })}
       </p>
-      <ChangePasswordForm submitLabel="Save password and continue" />
+      <ChangePasswordForm submitLabel={t('Save password and continue')} />
       <p className="auth-footnote">
-        Not {user.name}?{' '}
+        {t('Not {name}?', { name: user.name })}{' '}
         <button type="button" className="link-button" onClick={() => logout.mutate()}>
-          Sign out
+          {t('Sign out')}
         </button>
       </p>
       {logout.error && <p className="field-error">{errorMessage(logout.error)}</p>}

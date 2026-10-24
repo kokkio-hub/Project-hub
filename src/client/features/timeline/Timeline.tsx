@@ -8,7 +8,7 @@ import { useUpdateTask } from '../../api/queries';
 import { Avatar } from '../../components/Avatar';
 import { EmptyState, useToast } from '../../components/Feedback';
 import { ProjectDot, StatusGlyph, StatusIcon } from '../../components/Icons';
-import { formatDate, formatRange, plural } from '../../lib/format';
+import { formatDate, formatRange } from '../../lib/format';
 import {
   applyDrag,
   buildGrid,
@@ -19,6 +19,7 @@ import {
   type DragMode,
   type Zoom,
 } from './timelineMath';
+import { N_, t, tn } from '../../i18n';
 
 export interface TimelineGroup {
   project: Project;
@@ -34,9 +35,9 @@ interface TimelineProps {
 }
 
 const ZOOMS: { value: Zoom; label: string }[] = [
-  { value: 'day', label: 'Days' },
-  { value: 'week', label: 'Weeks' },
-  { value: 'month', label: 'Months' },
+  { value: 'day', label: N_('Days') },
+  { value: 'week', label: N_('Weeks') },
+  { value: 'month', label: N_('Months') },
 ];
 
 interface HoverInfo {
@@ -72,9 +73,9 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
     for (const { project, tasks } of groups) {
       if (project.startDate) dates.push(project.startDate);
       if (project.dueDate) dates.push(project.dueDate);
-      for (const t of tasks) {
-        if (t.startDate) dates.push(t.startDate);
-        if (t.dueDate) dates.push(t.dueDate);
+      for (const task of tasks) {
+        if (task.startDate) dates.push(task.startDate);
+        if (task.dueDate) dates.push(task.dueDate);
       }
     }
     return dates;
@@ -108,7 +109,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
     (task: Task, dates: { startDate: string | null; dueDate: string | null }) => {
       updateTask(
         { id: task.id, patch: dates },
-        { onError: (error) => toast.error(`Couldn't change the dates: ${errorMessage(error)}`) },
+        { onError: (error) => toast.error(t('Couldn’t change the dates: {error}', { error: errorMessage(error) })) },
       );
     },
     [updateTask, toast],
@@ -126,8 +127,8 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
   if (groups.length === 0 || (!showGroups && totalTasks === 0)) {
     return (
       <div className="card">
-        <EmptyState icon={<CalendarRange size={22} />} title="Nothing to show on the timeline yet">
-          Add tasks with start and due dates and they will appear here as bars you can drag to reschedule.
+        <EmptyState icon={<CalendarRange size={22} />} title={t('Nothing to show on the timeline yet')}>
+          {t('Add tasks with start and due dates and they will appear here as bars you can drag to reschedule.')}
         </EmptyState>
       </div>
     );
@@ -138,36 +139,36 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
   return (
     <div className="timeline card" style={style}>
       <div className="timeline-toolbar">
-        <div className="segmented" role="group" aria-label="Zoom level">
+        <div className="segmented" role="group" aria-label={t('Zoom level')}>
           {ZOOMS.map((z) => (
             <button key={z.value} type="button" aria-pressed={zoom === z.value} onClick={() => setZoom(z.value)}>
-              {z.label}
+              {t(z.label)}
             </button>
           ))}
         </div>
         <button type="button" className="btn btn-sm" onClick={() => scrollToToday()}>
-          Today
+          {t('Today')}
         </button>
         <span className="spacer" />
-        <div className="timeline-legend" aria-label="Legend">
+        <div className="timeline-legend" aria-label={t('Legend')}>
           <span>
-            <span className="legend-bar" /> Open
+            <span className="legend-bar" /> {t('Open')}
           </span>
           <span>
-            <span className="legend-bar is-done" /> Done
+            <span className="legend-bar is-done" /> {t('Done')}
           </span>
           <span>
-            <span className="legend-diamond" /> Due date only
+            <span className="legend-diamond" /> {t('Due date only')}
           </span>
           <span>
-            <StatusGlyph tone="critical" size={12} /> Overdue
+            <StatusGlyph tone="critical" size={12} /> {t('Overdue')}
           </span>
           <span>
             <svg width="22" height="10" aria-hidden className="legend-arrow">
               <path d="M1 5 H17" />
               <path d="M15 2 L19 5 L15 8" />
             </svg>
-            Waits for
+            {t('Waits for')}
           </span>
         </div>
       </div>
@@ -175,7 +176,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
       <div className="timeline-scroll" ref={scrollRef}>
         <div className="timeline-inner" style={{ width: labelWidth + trackWidth }}>
           <div className="timeline-header">
-            <div className="timeline-corner">{showGroups ? 'Project / task' : 'Task'}</div>
+            <div className="timeline-corner">{showGroups ? t('Project / task') : t('Task')}</div>
             <div className="timeline-scale" style={{ width: trackWidth }}>
               <div className="scale-row scale-top">
                 {scale.top.map((cell) => (
@@ -206,7 +207,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
               {grid.lines.map((x) => (
                 <div key={`l${x}`} className="grid-line" style={{ left: x }} />
               ))}
-              <div className="grid-today" style={{ left: todayX }} title={`Today, ${formatDate(today)}`} />
+              <div className="grid-today" style={{ left: todayX }} title={t('Today, {date}', { date: formatDate(today) })} />
             </div>
 
             <DependencyArrows
@@ -253,7 +254,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
                   {!isCollapsed && showGroups && tasks.length === 0 && (
                     <div className="timeline-row">
                       <div className="timeline-label muted" style={{ paddingLeft: 40 }}>
-                        No tasks
+                        {t('No tasks')}
                       </div>
                       <div className="timeline-track" style={{ width: trackWidth }} />
                     </div>
@@ -382,13 +383,13 @@ function GroupRow({
 }) {
   let start = project.startDate;
   let end = project.dueDate;
-  for (const t of tasks) {
-    const span = taskSpan(t);
+  for (const task of tasks) {
+    const span = taskSpan(task);
     if (!span) continue;
     if (!project.startDate && (!start || span.start < start)) start = span.start;
     if (!project.dueDate && (!end || span.end > end)) end = span.end;
   }
-  const done = tasks.filter((t) => t.status === 'done').length;
+  const done = tasks.filter((task) => task.status === 'done').length;
   const progress = tasks.length ? done / tasks.length : 0;
   const barStyle =
     start && end && start <= end
@@ -407,7 +408,7 @@ function GroupRow({
           className="icon-btn icon-btn-sm"
           onClick={onToggle}
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${project.name}`}
+          aria-label={collapsed ? t('Expand {name}', { name: project.name }) : t('Collapse {name}', { name: project.name })}
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
         </button>
@@ -424,7 +425,11 @@ function GroupRow({
           <div
             className="tl-summary"
             style={barStyle}
-            title={`${project.name}: ${formatRange(start, end)} · ${Math.round(progress * 100)}% of tasks done`}
+            title={t('{name}: {dates} · {percent} of tasks done', {
+              name: project.name,
+              dates: formatRange(start, end),
+              percent: `${Math.round(progress * 100)}%`,
+            })}
           >
             <div className="tl-summary-fill" style={{ width: `${progress * 100}%` }} />
           </div>
@@ -525,7 +530,7 @@ const TaskRow = memo(function TaskRow({
         {label}
         <div className="timeline-track">
           <button type="button" className="tl-nodates" onClick={() => onOpen(task.id)}>
-            No dates · set them in the task
+            {t('No dates · set them in the task')}
           </button>
         </div>
       </div>
@@ -534,8 +539,8 @@ const TaskRow = memo(function TaskRow({
 
   const left = diffDays(span.start, rangeStart) * ppd;
   const width = (diffDays(span.end, span.start) + 1) * ppd;
-  const aria = `${task.title}. ${formatRange(preview.startDate, preview.dueDate)}. ${TASK_STATUS_LABELS[task.status]}.${
-    readOnly ? '' : ' Press Enter to open, arrow keys to move by a day, Shift plus arrow to change the due date.'
+  const aria = `${task.title}. ${formatRange(preview.startDate, preview.dueDate)}. ${t(TASK_STATUS_LABELS[task.status])}.${
+    readOnly ? '' : ` ${t('Press Enter to open, arrow keys to move by a day, Shift plus arrow to change the due date.')}`
   }`;
 
   const handlers = {
@@ -575,7 +580,7 @@ const TaskRow = memo(function TaskRow({
           </div>
         )}
         {overdue && !drag && (
-          <span className="tl-flag" style={{ left: left + (span.milestone ? ppd / 2 + 12 : width + 6) }} title="Overdue">
+          <span className="tl-flag" style={{ left: left + (span.milestone ? ppd / 2 + 12 : width + 6) }} title={t('Overdue')}>
             <StatusGlyph tone="critical" size={13} />
           </span>
         )}
@@ -601,14 +606,14 @@ function TimelineTooltip({ info, assignee, today }: { info: HoverInfo; assignee:
       <strong>{task.title}</strong>
       <div>
         {formatRange(task.startDate, task.dueDate)}
-        {span && !span.milestone && ` · ${plural(days, 'day')}`}
+        {span && !span.milestone && ` · ${tn('{count} day', '{count} days', days)}`}
       </div>
       <div className="row" style={{ gap: 6, marginTop: 4 }}>
-        <StatusIcon status={task.status} /> {TASK_STATUS_LABELS[task.status]} · {assignee?.name ?? 'Unassigned'}
+        <StatusIcon status={task.status} /> {t(TASK_STATUS_LABELS[task.status])} · {assignee?.name ?? t('Unassigned')}
       </div>
       {overdue && (
         <div className="row" style={{ gap: 6, marginTop: 4, color: 'var(--text)' }}>
-          <StatusGlyph tone="critical" size={12} /> Overdue since {formatDate(task.dueDate!)}
+          <StatusGlyph tone="critical" size={12} /> {t('Overdue since {date}', { date: formatDate(task.dueDate!) })}
         </div>
       )}
     </div>

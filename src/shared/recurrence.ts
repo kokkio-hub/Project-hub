@@ -1,5 +1,6 @@
 import { addDays, diffDays } from './dates.js';
 import type { Recurrence } from './types.js';
+import { english, type Translator } from './i18n/core.js';
 
 /** Adds whole months, keeping the day of the month where possible (Jan 31 + 1 month = Feb 28/29). */
 export function addMonthsKeepDay(date: string, months: number): string {
@@ -48,7 +49,17 @@ export function nextDates(
   return task.dueDate ? { startDate: null, dueDate: next } : { startDate: next, dueDate: null };
 }
 
-export function describeRecurrence(rule: Recurrence): string {
-  const unit = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' }[rule.freq];
-  return rule.interval === 1 ? `Every ${unit}` : `Every ${rule.interval} ${unit}s`;
+/** "Every week", "Every 2 months". */
+export function describeRecurrence(rule: Recurrence, tr: Translator = english): string {
+  const n = rule.interval;
+  switch (rule.freq) {
+    case 'daily':
+      return tr.tn('Every day', 'Every {count} days', n);
+    case 'weekly':
+      return tr.tn('Every week', 'Every {count} weeks', n);
+    case 'monthly':
+      return tr.tn('Every month', 'Every {count} months', n);
+    case 'yearly':
+      return tr.tn('Every year', 'Every {count} years', n);
+  }
 }

@@ -5,9 +5,10 @@ import { ErrorNotice, PageLoading } from '../components/Feedback';
 import { applyFilters, DEFAULT_FILTERS, TaskFilters } from '../features/tasks/filters';
 import { Timeline, type TimelineGroup } from '../features/timeline/Timeline';
 import { useOpenTask } from '../lib/hooks';
+import { t } from '../i18n';
 
 export function TimelinePage() {
-  useDocumentTitle('Timeline');
+  useDocumentTitle(t('Timeline'));
   const me = useCurrentUser();
   const projects = useProjects();
   const tasks = useTasks({});
@@ -22,7 +23,7 @@ export function TimelinePage() {
     const narrowing = filters.q.trim() !== '' || filters.assignee !== 'all' || filters.priority !== 'all';
     return (projects.data ?? [])
       .filter((p) => p.status === 'active' || p.status === 'on_hold' || (includeCompleted && p.status === 'completed'))
-      .map((project) => ({ project, tasks: visible.filter((t) => t.projectId === project.id) }))
+      .map((project) => ({ project, tasks: visible.filter((task) => task.projectId === project.id) }))
       .filter((g) => !narrowing || g.tasks.length > 0);
   }, [projects.data, tasks.data, filters, includeCompleted, me.id]);
 
@@ -30,8 +31,8 @@ export function TimelinePage() {
     <div className="page page-wide">
       <header className="page-header">
         <div className="titles">
-          <h1>Timeline</h1>
-          <p className="subtitle">All projects over time. Drag a bar to move a task, drag its ends to change the dates.</p>
+          <h1>{t('Timeline')}</h1>
+          <p className="subtitle">{t('All projects over time. Drag a bar to move a task, drag its ends to change the dates.')}</p>
         </div>
       </header>
 
@@ -43,7 +44,7 @@ export function TimelinePage() {
             checked={includeCompleted}
             onChange={(e) => setIncludeCompleted(e.target.checked)}
           />
-          Include completed projects
+          {t('Include completed projects')}
         </label>
       </TaskFilters>
 

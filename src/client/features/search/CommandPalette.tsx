@@ -21,6 +21,7 @@ import { Spinner } from '../../components/Feedback';
 import { ProjectDot, StatusIcon } from '../../components/Icons';
 import { Modal } from '../../components/Modal';
 import { useDebounced, useOpenTask } from '../../lib/hooks';
+import { t } from '../../i18n';
 
 interface Item {
   key: string;
@@ -47,7 +48,7 @@ export function CommandPalette({
   onNewProject: () => void;
 }) {
   return (
-    <Modal open={open} onClose={onClose} title="Search" className="modal palette" header={<></>} labelledBy="palette-input">
+    <Modal open={open} onClose={onClose} title={t('Search')} className="modal palette" header={<></>} labelledBy="palette-input">
       {open && <Palette onClose={onClose} onNewTask={onNewTask} onNewProject={onNewProject} />}
     </Modal>
   );
@@ -75,49 +76,49 @@ function Palette({ onClose, onNewTask, onNewProject }: { onClose: () => void; on
     const commands: Item[] = [
       ...(canChangeWork(me)
         ? [
-            { key: 'new-task', group: 'Actions', icon: <Plus size={16} />, label: 'New task', run: () => (onClose(), onNewTask()) },
-            { key: 'new-project', group: 'Actions', icon: <Plus size={16} />, label: 'New project', run: () => (onClose(), onNewProject()) },
+            { key: 'new-task', group: t('Actions'), icon: <Plus size={16} />, label: t('New task'), run: () => (onClose(), onNewTask()) },
+            { key: 'new-project', group: t('Actions'), icon: <Plus size={16} />, label: t('New project'), run: () => (onClose(), onNewProject()) },
           ]
         : []),
-      { key: 'dash', group: 'Go to', icon: <LayoutDashboard size={16} />, label: 'Dashboard', run: go('/') },
-      { key: 'mine', group: 'Go to', icon: <ListTodo size={16} />, label: 'My tasks', run: go('/my-tasks') },
-      { key: 'projects', group: 'Go to', icon: <FolderKanban size={16} />, label: 'Projects', run: go('/projects') },
-      { key: 'timeline', group: 'Go to', icon: <ChartGantt size={16} />, label: 'Timeline', run: go('/timeline') },
-      { key: 'team', group: 'Go to', icon: <Users size={16} />, label: 'Team', run: go('/team') },
-      { key: 'trash', group: 'Go to', icon: <Trash2 size={16} />, label: 'Trash', run: go('/trash') },
-      { key: 'account', group: 'Go to', icon: <UserRound size={16} />, label: 'Account settings', run: go('/account') },
-      ...(me.role === 'admin' ? [{ key: 'settings', group: 'Go to', icon: <Settings size={16} />, label: 'Workspace settings', run: go('/settings') }] : []),
+      { key: 'dash', group: t('Go to'), icon: <LayoutDashboard size={16} />, label: t('Dashboard'), run: go('/') },
+      { key: 'mine', group: t('Go to'), icon: <ListTodo size={16} />, label: t('My tasks'), run: go('/my-tasks') },
+      { key: 'projects', group: t('Go to'), icon: <FolderKanban size={16} />, label: t('Projects'), run: go('/projects') },
+      { key: 'timeline', group: t('Go to'), icon: <ChartGantt size={16} />, label: t('Timeline'), run: go('/timeline') },
+      { key: 'team', group: t('Go to'), icon: <Users size={16} />, label: t('Team'), run: go('/team') },
+      { key: 'trash', group: t('Go to'), icon: <Trash2 size={16} />, label: t('Trash'), run: go('/trash') },
+      { key: 'account', group: t('Go to'), icon: <UserRound size={16} />, label: t('Account settings'), run: go('/account') },
+      ...(me.role === 'admin' ? [{ key: 'settings', group: t('Go to'), icon: <Settings size={16} />, label: t('Workspace settings'), run: go('/settings') }] : []),
     ].filter((c) => !q || c.label.toLowerCase().includes(q));
 
     if (!debounced.trim()) return commands;
     const r = search.data;
     const found: Item[] = [
-      ...(r?.tasks ?? []).map((t) => {
-        const project = projectsById.get(t.projectId);
+      ...(r?.tasks ?? []).map((task) => {
+        const project = projectsById.get(task.projectId);
         return {
-          key: `t${t.id}`,
-          group: 'Tasks',
-          icon: <StatusIcon status={t.status} size={16} />,
-          label: t.title,
-          hint: `${project?.name ?? ''} · ${TASK_STATUS_LABELS[t.status]} · #${t.id}`,
+          key: `t${task.id}`,
+          group: t('Tasks'),
+          icon: <StatusIcon status={task.status} size={16} />,
+          label: task.title,
+          hint: `${project?.name ?? ''} · ${t(TASK_STATUS_LABELS[task.status])} · #${task.id}`,
           run: () => {
             onClose();
-            if (project) navigate(`/projects/${project.id}?task=${t.id}`);
-            else openTask(t.id);
+            if (project) navigate(`/projects/${project.id}?task=${task.id}`);
+            else openTask(task.id);
           },
         };
       }),
       ...(r?.projects ?? []).map((p) => ({
         key: `p${p.id}`,
-        group: 'Projects',
+        group: t('Projects'),
         icon: <ProjectDot color={p.color} />,
         label: p.name,
-        hint: p.isTemplate ? 'Template' : p.status === 'archived' ? 'Archived' : undefined,
+        hint: p.isTemplate ? t('Template') : p.status === 'archived' ? t('Archived') : undefined,
         run: go(`/projects/${p.id}`),
       })),
       ...(r?.people ?? []).map((u) => ({
         key: `u${u.id}`,
-        group: 'People',
+        group: t('People'),
         icon: <Avatar user={u} size="xs" title={null} />,
         label: u.name,
         hint: u.title || u.email,
@@ -146,7 +147,7 @@ function Palette({ onClose, onNewTask, onNewProject }: { onClose: () => void; on
         <input
           id="palette-input"
           className="palette-input"
-          placeholder="Search tasks, projects and people, or type a command…"
+          placeholder={t('Search tasks, projects and people, or type a command…')}
           value={query}
           autoFocus
           role="combobox"
@@ -170,7 +171,7 @@ function Palette({ onClose, onNewTask, onNewProject }: { onClose: () => void; on
         {search.isFetching && <Spinner size={16} />}
         <span className="kbd">Esc</span>
       </div>
-      <ul className="palette-list" id="palette-list" role="listbox" ref={listRef} aria-label="Results">
+      <ul className="palette-list" id="palette-list" role="listbox" ref={listRef} aria-label={t('Results')}>
         {groups.map((g) => (
           <li key={g.name} role="presentation">
             <div className="palette-group">{g.name}</div>
@@ -193,7 +194,7 @@ function Palette({ onClose, onNewTask, onNewProject }: { onClose: () => void; on
             </ul>
           </li>
         ))}
-        {items.length === 0 && <li className="palette-empty">Nothing found for “{query}”.</li>}
+        {items.length === 0 && <li className="palette-empty">{t('Nothing found for “{query}”.', { query })}</li>}
       </ul>
     </div>
   );

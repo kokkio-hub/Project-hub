@@ -1,5 +1,6 @@
 import { addDays } from '../../shared/dates.js';
 import { describeRecurrence } from '../../shared/recurrence.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskPriority, type TaskStatus } from '../../shared/types.js';
 
 /**
@@ -52,7 +53,10 @@ export function foldLine(line: string): string {
 const compactDate = (date: string) => date.replace(/-/g, '');
 const stamp = (iso: string) => iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
-export function buildCalendar(input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[] }): string {
+export function buildCalendar(
+  input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[] },
+  tr: Translator = english,
+): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -70,8 +74,10 @@ export function buildCalendar(input: { name: string; appUrl: string | null; host
     const done = task.status === 'done';
     const url = input.appUrl ? `${input.appUrl}/projects/${task.projectId}?task=${task.id}` : null;
     const details = [
-      `${task.projectName} · ${task.columnName ?? TASK_STATUS_LABELS[task.status]} · ${TASK_PRIORITY_LABELS[task.priority]} priority`,
-      task.recurrence ? describeRecurrence(task.recurrence) : null,
+      `${task.projectName} · ${task.columnName ?? tr.t(TASK_STATUS_LABELS[task.status])} · ${tr.t('{priority} priority', {
+        priority: tr.t(TASK_PRIORITY_LABELS[task.priority]),
+      })}`,
+      task.recurrence ? describeRecurrence(task.recurrence, tr) : null,
       task.description.trim() ? `\n${task.description.trim().slice(0, 2000)}` : null,
       url ? `\n${url}` : null,
     ]

@@ -1,6 +1,7 @@
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Check, Eye, EyeOff } from 'lucide-react';
 import { COLOR_NAMES, type ColorName, type User } from '../../shared/types';
+import { t } from '../i18n';
 
 export function Field({
   label,
@@ -43,7 +44,7 @@ export function PasswordInput(props: InputHTMLAttributes<HTMLInputElement>) {
         type="button"
         className="icon-btn"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-label={visible ? t('Hide password') : t('Show password')}
         aria-pressed={visible}
       >
         {visible ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -120,7 +121,7 @@ export function UserSelect({
       {options.map((u) => (
         <option key={u.id} value={u.id}>
           {u.name}
-          {!u.isActive ? ' (deactivated)' : u.invitePending ? ' (invited)' : ''}
+          {!u.isActive ? ` ${t('(deactivated)')}` : u.invitePending ? ` ${t('(invited)')}` : ''}
         </option>
       ))}
     </select>

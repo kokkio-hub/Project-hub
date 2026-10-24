@@ -5,6 +5,7 @@ import { errorMessage } from '../../api/client';
 import { useAddChecklistItem, useChecklist, useDeleteChecklistItem, useReorderChecklist, useUpdateChecklistItem } from '../../api/board';
 import { Meter } from '../../components/Bits';
 import { Spinner, useToast } from '../../components/Feedback';
+import { t } from '../../i18n';
 
 /** The checklist inside a task: tick items off, add, rename, reorder and remove them. */
 export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
@@ -39,11 +40,11 @@ export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: bool
   return (
     <section className="drawer-section">
       <h3 className="section-title">
-        Checklist {total > 0 && <span className="muted num">{done}/{total}</span>}
+        {t('Checklist')} {total > 0 && <span className="muted num">{done}/{total}</span>}
       </h3>
       {total > 0 && (
         <div className="meter-row" style={{ marginBottom: 8 }}>
-          <Meter value={done / total} label="Checklist progress" />
+          <Meter value={done / total} label={t('Checklist progress')} />
         </div>
       )}
       {isPending ? (
@@ -69,8 +70,8 @@ export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: bool
             <input
               className="input input-sm"
               value={draft}
-              placeholder="Add an item… (Enter to add)"
-              aria-label="New checklist item"
+              placeholder={t('Add an item… (Enter to add)')}
+              aria-label={t('New checklist item')}
               maxLength={500}
               autoFocus={adding}
               onChange={(e) => setDraft(e.target.value)}
@@ -83,12 +84,12 @@ export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: bool
               }}
             />
             <button type="submit" className="btn btn-sm" disabled={!draft.trim() || add.isPending}>
-              Add
+              {t('Add')}
             </button>
           </form>
         ) : (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAdding(true)}>
-            <Plus size={14} /> Add item
+            <Plus size={14} /> {t('Add item')}
           </button>
         ))}
     </section>
@@ -133,7 +134,7 @@ function ChecklistRow({
         className="checkbox"
         checked={item.done}
         disabled={readOnly}
-        aria-label={item.done ? `Untick ${item.body}` : `Tick off ${item.body}`}
+        aria-label={item.done ? t('Untick {body}', { body: item.body }) : t('Tick off {body}', { body: item.body })}
         onChange={(e) => update.mutate({ id: item.id, patch: { done: e.target.checked } }, { onError: (err) => toast.error(errorMessage(err)) })}
       />
       {editing ? (
@@ -142,7 +143,7 @@ function ChecklistRow({
           value={value}
           autoFocus
           maxLength={500}
-          aria-label="Checklist item"
+          aria-label={t('Checklist item')}
           onChange={(e) => setValue(e.target.value)}
           onBlur={save}
           onKeyDown={(e) => {
@@ -164,24 +165,24 @@ function ChecklistRow({
           }}
           tabIndex={readOnly ? -1 : 0}
           role={readOnly ? undefined : 'button'}
-          title={readOnly ? undefined : 'Click to edit'}
+          title={readOnly ? undefined : t('Click to edit')}
         >
           {item.body}
         </span>
       )}
       {!readOnly && !editing && (
         <span className="checklist-actions">
-          <button type="button" className="icon-btn icon-btn-sm" onClick={() => onMove(-1)} disabled={first} aria-label="Move up">
+          <button type="button" className="icon-btn icon-btn-sm" onClick={() => onMove(-1)} disabled={first} aria-label={t('Move up')}>
             <ArrowUp size={13} />
           </button>
-          <button type="button" className="icon-btn icon-btn-sm" onClick={() => onMove(1)} disabled={last} aria-label="Move down">
+          <button type="button" className="icon-btn icon-btn-sm" onClick={() => onMove(1)} disabled={last} aria-label={t('Move down')}>
             <ArrowDown size={13} />
           </button>
           <button
             type="button"
             className="icon-btn icon-btn-sm"
             onClick={() => remove.mutate(item.id, { onError: (e) => toast.error(errorMessage(e)) })}
-            aria-label={`Remove ${item.body}`}
+            aria-label={t('Remove {body}', { body: item.body })}
           >
             <Trash2 size={13} />
           </button>

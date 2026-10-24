@@ -39,6 +39,7 @@ import { TaskTable } from '../features/tasks/TaskTable';
 import { Timeline } from '../features/timeline/Timeline';
 import { formatRange, percent } from '../lib/format';
 import { useOpenTask } from '../lib/hooks';
+import { t, tn, tr } from '../i18n';
 
 type View = 'board' | 'timeline' | 'list';
 
@@ -71,8 +72,8 @@ export function ProjectPage() {
 
   const notFound = (
     <div className="page">
-      <EmptyState icon={<FolderX size={22} />} title="Project not found">
-        It may have been deleted, the link is wrong, or it’s a private project you haven’t been added to.
+      <EmptyState icon={<FolderX size={22} />} title={t('Project not found')}>
+        {t('It may have been deleted, the link is wrong, or it’s a private project you haven’t been added to.')}
       </EmptyState>
     </div>
   );
@@ -105,22 +106,27 @@ export function ProjectPage() {
       overdue: p.counts.overdue,
     },
     localToday(),
+    tr(),
   );
 
   const setStatus = (status: 'archived' | 'active') =>
     update.mutate(
       { id: p.id, patch: { status } },
       {
-        onSuccess: () => toast.success(status === 'archived' ? 'Project archived' : 'Project restored'),
+        onSuccess: () => toast.success(status === 'archived' ? t('Project archived') : t('Project restored')),
         onError: (e) => toast.error(errorMessage(e)),
       },
     );
 
   const deleteProject = async () => {
     const ok = await confirm({
-      title: `Delete “${p.name}”?`,
-      message: `The project and its ${p.counts.total} tasks move to the trash, where they stay for 30 days before they’re removed for good. Archiving keeps everything but hides it.`,
-      confirmLabel: 'Move to trash',
+      title: t('Delete “{name}”?', { name: p.name }),
+      message: tn(
+        'The project and its {count} task move to the trash, where they stay for 30 days before they’re removed for good. Archiving keeps everything but hides it.',
+        'The project and its {count} tasks move to the trash, where they stay for 30 days before they’re removed for good. Archiving keeps everything but hides it.',
+        p.counts.total,
+      ),
+      confirmLabel: t('Move to trash'),
       danger: true,
     });
     if (!ok) return;
@@ -129,11 +135,11 @@ export function ProjectPage() {
     navigate('/projects');
     remove.mutateAsync(p.id).then(
       () =>
-        toast.success('Project moved to the trash', {
-          label: 'Undo',
+        toast.success(t('Project moved to the trash'), {
+          label: t('Undo'),
           onClick: () =>
             void undoDelete(queryClient, item).then(
-              () => toast.success('Project restored'),
+              () => toast.success(t('Project restored')),
               (e) => toast.error(errorMessage(e)),
             ),
         }),
@@ -152,22 +158,22 @@ export function ProjectPage() {
             <h1 className="truncate">{p.name}</h1>
             {p.isTemplate ? (
               <span className="badge badge-accent">
-                <LayoutTemplate size={12} aria-hidden /> Template
+                <LayoutTemplate size={12} aria-hidden /> {t('Template')}
               </span>
             ) : (
-              <span className="badge">{PROJECT_STATUS_LABELS[p.status]}</span>
+              <span className="badge">{t(PROJECT_STATUS_LABELS[p.status])}</span>
             )}
             {p.visibility === 'private' && (
-              <span className="badge" title="Only the people on this project and admins can see it">
-                <Lock size={12} aria-hidden /> Private
+              <span className="badge" title={t('Only the people on this project and admins can see it')}>
+                <Lock size={12} aria-hidden /> {t('Private')}
               </span>
             )}
           </div>
           {p.description && <p className="subtitle project-description">{p.description}</p>}
           <div className="project-meta">
-            <span className="row" style={{ gap: 6 }} title="Project owner">
+            <span className="row" style={{ gap: 6 }} title={t('Project owner')}>
               <Avatar user={owner ?? null} size="xs" title={null} />
-              {owner?.name ?? 'No owner'}
+              {owner?.name ?? t('No owner')}
             </span>
             <span className="row secondary" style={{ gap: 6 }}>
               <CalendarRange size={14} aria-hidden />
@@ -176,15 +182,15 @@ export function ProjectPage() {
             {!p.isTemplate && <HealthBadge health={health.health} reason={health.reason} />}
             {!p.isTemplate && (
               <span className="meter-row" style={{ minWidth: 200 }}>
-                <Meter value={health.progress} tone={healthTone(health.health)} label={`${p.name} progress`} />
+                <Meter value={health.progress} tone={healthTone(health.health)} label={t('{name} progress', { name: p.name })} />
                 <span className="meter-value">{percent(health.progress)}</span>
                 <span className="muted num" style={{ fontSize: 'var(--text-sm)', whiteSpace: 'nowrap' }}>
-                  {p.counts.done}/{p.counts.total} done
+                  {t('{done}/{total} done', { done: p.counts.done, total: p.counts.total })}
                 </span>
               </span>
             )}
             {p.memberIds.length > 0 && (
-              <span className="avatar-stack" title={`${p.memberIds.length} ${p.memberIds.length === 1 ? 'person' : 'people'} added to this project`}>
+              <span className="avatar-stack" title={tn('{count} person added to this project', '{count} people added to this project', p.memberIds.length)}>
                 {p.memberIds.slice(0, 5).map((id) => (
                   <Avatar key={id} user={byId.get(id) ?? null} size="xs" />
                 ))}
@@ -196,55 +202,55 @@ export function ProjectPage() {
         <div className="actions">
           {p.isTemplate && !guest && (
             <button type="button" className="btn btn-primary" onClick={() => setUsingTemplate(true)}>
-              <LayoutTemplate size={16} /> Use this template
+              <LayoutTemplate size={16} /> {t('Use this template')}
             </button>
           )}
           {!readOnly && (
             <button type="button" className={`btn ${p.isTemplate ? '' : 'btn-primary'}`} onClick={() => setCreating(true)}>
-              <Plus size={16} /> New task
+              <Plus size={16} /> {t('New task')}
             </button>
           )}
           {manage && (
             <button type="button" className="btn" onClick={() => setEditing(true)}>
-              <Settings size={16} /> Settings
+              <Settings size={16} /> {t('Settings')}
             </button>
           )}
           <Menu
             trigger={(props) => (
-              <button type="button" className="btn" aria-label="More project actions" {...props} style={{ padding: '0 9px' }}>
+              <button type="button" className="btn" aria-label={t('More project actions')} {...props} style={{ padding: '0 9px' }}>
                 <Ellipsis size={17} />
               </button>
             )}
           >
             {!guest && (
               <MenuItem icon={<Copy size={16} />} onSelect={() => setCopyMode('copy')}>
-                Duplicate project…
+                {t('Duplicate project…')}
               </MenuItem>
             )}
             {!guest && !p.isTemplate && (
               <MenuItem icon={<LayoutTemplate size={16} />} onSelect={() => setCopyMode('template')}>
-                Save as template…
+                {t('Save as template…')}
               </MenuItem>
             )}
             <MenuItem icon={<Download size={16} />} onSelect={() => (window.location.href = `/api/projects/${p.id}/export.csv`)}>
-              Export tasks (CSV)
+              {t('Export tasks (CSV)')}
             </MenuItem>
             {manage && (
               <>
                 <MenuSeparator />
                 {archived ? (
                   <MenuItem icon={<ArchiveRestore size={16} />} onSelect={() => setStatus('active')}>
-                    Restore project
+                    {t('Restore project')}
                   </MenuItem>
                 ) : (
                   !p.isTemplate && (
                     <MenuItem icon={<Archive size={16} />} onSelect={() => setStatus('archived')}>
-                      Archive project
+                      {t('Archive project')}
                     </MenuItem>
                   )
                 )}
                 <MenuItem icon={<Trash2 size={16} />} danger onSelect={deleteProject}>
-                  {p.isTemplate ? 'Delete template' : 'Delete project'}
+                  {p.isTemplate ? t('Delete template') : t('Delete project')}
                 </MenuItem>
               </>
             )}
@@ -255,38 +261,38 @@ export function ProjectPage() {
       {archived && (
         <div className="alert alert-info" style={{ marginBottom: 16 }}>
           <Archive size={16} aria-hidden />
-          This project is archived. Its tasks are read-only and hidden from the dashboard.
+          {t('This project is archived. Its tasks are read-only and hidden from the dashboard.')}
         </div>
       )}
       {p.isTemplate && (
         <div className="alert alert-info" style={{ marginBottom: 16 }}>
           <LayoutTemplate size={16} aria-hidden />
-          This is a template. Its tasks don’t count as work. Use it to start new projects with the same columns, labels and tasks.
+          {t('This is a template. Its tasks don’t count as work. Use it to start new projects with the same columns, labels and tasks.')}
         </div>
       )}
       {guest && !archived && (
         <div className="alert alert-info" style={{ marginBottom: 16 }}>
           <Eye size={16} aria-hidden />
-          You’re a guest on this project: you can follow along and comment on tasks.
+          {t('You’re a guest on this project: you can follow along and comment on tasks.')}
         </div>
       )}
 
-      <nav className="tabs" aria-label="Project views" style={{ marginBottom: 16 }}>
+      <nav className="tabs" aria-label={t('Project views')} style={{ marginBottom: 16 }}>
         <NavLink to={base} end className="tab">
-          <Kanban size={16} aria-hidden /> Board
+          <Kanban size={16} aria-hidden /> {t('Board')}
         </NavLink>
         <NavLink to={`${base}/timeline`} className="tab">
-          <CalendarRange size={16} aria-hidden /> Timeline
+          <CalendarRange size={16} aria-hidden /> {t('Timeline')}
         </NavLink>
         <NavLink to={`${base}/list`} className="tab">
-          <List size={16} aria-hidden /> List
+          <List size={16} aria-hidden /> {t('List')}
         </NavLink>
       </nav>
 
       <TaskFilters value={filters} onChange={setFilters} users={users} showHideDone={view !== 'board'} labels={p.labels}>
         {isFiltering(filters) && tasks.data && (
           <span className="muted" style={{ fontSize: 'var(--text-sm)' }}>
-            Showing {visibleTasks.length} of {tasks.data.length}
+            {t('Showing {shown} of {total}', { shown: visibleTasks.length, total: tasks.data.length })}
           </span>
         )}
       </TaskFilters>
@@ -309,8 +315,8 @@ export function ProjectPage() {
         <Timeline groups={[{ project: p, tasks: visibleTasks }]} showGroups={false} usersById={byId} onOpenTask={openTask} />
       ) : visibleTasks.length === 0 ? (
         <div className="card">
-          <EmptyState icon={<List size={22} />} title={tasks.data.length ? 'No tasks match the filters' : 'No tasks yet'}>
-            {tasks.data.length ? 'Try clearing the filters.' : readOnly ? 'Nothing here yet.' : 'Create the first task for this project.'}
+          <EmptyState icon={<List size={22} />} title={tasks.data.length ? t('No tasks match the filters') : t('No tasks yet')}>
+            {tasks.data.length ? t('Try clearing the filters.') : readOnly ? t('Nothing here yet.') : t('Create the first task for this project.')}
           </EmptyState>
         </div>
       ) : (

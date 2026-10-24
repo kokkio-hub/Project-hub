@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { Lang } from '../../shared/i18n/core';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   ActivityItem,
@@ -84,12 +85,12 @@ export function invalidateWork(qc: QueryClient): void {
 
 /** Applies a change to a task in every cached list, so the UI updates before the server answers. */
 export function patchTaskCaches(qc: QueryClient, id: number, patch: Partial<Task>): void {
-  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((task) => (task.id === id ? { ...task, ...patch } : task)));
   qc.setQueryData<Task>(qk.task(id), (old) => (old ? { ...old, ...patch } : old));
 }
 
 function removeTaskFromCaches(qc: QueryClient, id: number): void {
-  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.filter((t) => t.id !== id));
+  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.filter((task) => task.id !== id));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +180,7 @@ export function useChangePassword() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name?: string; title?: string; color?: ColorName; notifyEmail?: NotifyEmailMode }) =>
+    mutationFn: (input: { name?: string; title?: string; color?: ColorName; notifyEmail?: NotifyEmailMode; language?: Lang | null }) =>
       api<{ user: Me }>('/auth/me', { method: 'PATCH', body: input }).then((r) => r.user),
     onSuccess: (user) => {
       qc.setQueryData(qk.me, user);

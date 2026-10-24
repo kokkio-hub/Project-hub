@@ -1,4 +1,5 @@
 import type { Config } from './config.js';
+import type { Lang } from '../shared/i18n/core.js';
 import type { DB } from './db/index.js';
 import type { EventHub } from './lib/events.js';
 import type { BackgroundJobs } from './lib/jobs.js';
@@ -27,6 +28,8 @@ declare global {
       clientToday: string;
       /** The viewer's offset from UTC in minutes (from X-Client-Tz-Offset, else the server's). */
       tzOffsetMinutes: number;
+      /** The language to answer in (X-Client-Lang, else the person's settings, else the browser's). */
+      lang: Lang;
     }
   }
 }

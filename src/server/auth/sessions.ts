@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { DB } from '../db/index.js';
 import { nowIso } from '../db/index.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 import type { UserRow } from '../repos/users.js';
 
 export const SESSION_COOKIE = 'ph_session';
@@ -118,9 +119,9 @@ export function deleteUserSession(db: DB, userId: number, sessionId: string): bo
 }
 
 /** "Chrome on Windows", "Safari on iPhone"... from a browser's user agent. */
-export function describeDevice(userAgent: string): string {
+export function describeDevice(userAgent: string, tr: Translator = english): string {
   const ua = userAgent;
-  if (!ua) return 'Unknown device';
+  if (!ua) return tr.t('Unknown device');
   const browser = /Edg\//.test(ua)
     ? 'Edge'
     : /OPR\/|Opera/.test(ua)
@@ -149,6 +150,6 @@ export function describeDevice(userAgent: string): string {
               : /Linux/.test(ua)
                 ? 'Linux'
                 : null;
-  if (browser && os) return `${browser} on ${os}`;
+  if (browser && os) return tr.t('{browser} on {os}', { browser, os });
   return browser ?? os ?? ua.slice(0, 60);
 }

@@ -28,10 +28,10 @@ export function Popover({ trigger, children, label, align = 'start', width = 280
   const [open, setOpen] = useState(false);
 
   const position = useCallback(() => {
-    const t = triggerRef.current;
+    const trigger = triggerRef.current;
     const p = panelRef.current;
-    if (!t || !p) return;
-    const r = t.getBoundingClientRect();
+    if (!trigger || !p) return;
+    const r = trigger.getBoundingClientRect();
     const w = Math.min(width, window.innerWidth - 16);
     p.style.width = `${w}px`;
     let left = align === 'end' ? r.right - w : r.left;

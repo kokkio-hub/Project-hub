@@ -1,6 +1,6 @@
 import { addDays, addMonths, diffDays, startOfMonth, startOfWeek, weekdayIndex } from '../../../shared/dates';
 import type { Task } from '../../../shared/types';
-import { monthLong, monthShort } from '../../lib/format';
+import { monthShort, monthYear } from '../../lib/format';
 
 export type Zoom = 'day' | 'week' | 'month';
 
@@ -83,7 +83,7 @@ export function buildScale(range: Range, zoom: Zoom, ppd: number, today: string)
     const from = m < range.start ? range.start : m;
     const next = addMonths(m, 1);
     const to = next > end ? addDays(end, 1) : next;
-    top.push({ key: m, left: x(from), width: diffDays(to, from) * ppd, label: `${monthLong(m)} ${m.slice(0, 4)}` });
+    top.push({ key: m, left: x(from), width: diffDays(to, from) * ppd, label: monthYear(m) });
   }
 
   if (zoom === 'day') {

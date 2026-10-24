@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isLang, LANGUAGES, type Lang } from '../shared/i18n/core.js';
 
 export interface Config {
   env: 'development' | 'production' | 'test';
@@ -10,6 +11,8 @@ export interface Config {
   /** Folder with the built web client (served when it contains index.html). */
   clientDir: string;
   appName: string;
+  /** Interface and email language for people who haven't chosen one. Null: follow each browser. */
+  defaultLanguage: Lang | null;
   sessionTtlDays: number;
   /** "auto" marks cookies Secure when the request arrived over HTTPS. */
   cookieSecure: 'auto' | boolean;
@@ -204,6 +207,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       (resolvedDb === ':memory:' ? path.join('data', 'attachments') : path.join(path.dirname(resolvedDb), 'attachments')),
   );
   const appName = env.APP_NAME?.trim() || 'Project Hub';
+  const languageRaw = env.DEFAULT_LANGUAGE?.trim().toLowerCase();
+  if (languageRaw && !isLang(languageRaw)) {
+    throw new Error(`DEFAULT_LANGUAGE must be one of ${LANGUAGES.join(', ')} (got "${env.DEFAULT_LANGUAGE}").`);
+  }
   const smtp = parseSmtp(env);
   const resendApiKey = env.RESEND_API_KEY?.trim() || null;
 
@@ -214,6 +221,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databasePath: resolvedDb,
     clientDir: path.resolve(env.CLIENT_DIR?.trim() || path.join(import.meta.dirname, '..', 'client')),
     appName,
+    defaultLanguage: languageRaw && isLang(languageRaw) ? languageRaw : null,
     sessionTtlDays: parseInteger('SESSION_TTL_DAYS', env.SESSION_TTL_DAYS, 30, 1, 365),
     cookieSecure,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),

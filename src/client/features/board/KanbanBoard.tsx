@@ -43,13 +43,15 @@ import { Modal } from '../../components/Modal';
 import { formatDate } from '../../lib/format';
 import { useAutosize } from '../../lib/hooks';
 import { LabelList } from '../labels/Labels';
+import { t, tn, tr } from '../../i18n';
 
 type Columns = Map<number, number[]>;
 
 /** Toast text after finishing a repeating task. */
 export function nextCopyMessage(next: Task): string {
-  const when = next.dueDate ? `due ${formatDate(next.dueDate)}` : next.startDate ? `starting ${formatDate(next.startDate)}` : 'added';
-  return `This task repeats: the next one is ${when}.`;
+  if (next.dueDate) return t('This task repeats: the next one is due {date}.', { date: formatDate(next.dueDate) });
+  if (next.startDate) return t('This task repeats: the next one starts {date}.', { date: formatDate(next.startDate) });
+  return t('This task repeats: the next one has been added.');
 }
 
 const dropId = (columnId: number) => `col-${columnId}`;
@@ -92,7 +94,7 @@ export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, can
   const [activeId, setActiveId] = useState<number | null>(null);
   const [addingColumn, setAddingColumn] = useState(false);
   const originColumn = useRef<number | null>(null);
-  const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const columnById = useMemo(() => new Map(columnsList.map((c) => [c.id, c])), [columnsList]);
 
   // Follow server data, except mid-drag (a teammate's change must not yank the card away).
@@ -178,11 +180,11 @@ export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, can
         ids.forEach((taskId, position) => places.set(taskId, { columnId, status: stage, position }));
       }
       qc.setQueryData<Task[]>(qk.tasks(cacheKey), (old) =>
-        old?.map((t) => {
-          const place = places.get(t.id);
-          if (!place) return t;
-          const completedAt = place.status === 'done' ? (t.completedAt ?? new Date().toISOString()) : null;
-          return { ...t, ...place, completedAt };
+        old?.map((task) => {
+          const place = places.get(task.id);
+          if (!place) return task;
+          const completedAt = place.status === 'done' ? (task.completedAt ?? new Date().toISOString()) : null;
+          return { ...task, ...place, completedAt };
         }),
       );
       move.mutate(
@@ -191,7 +193,7 @@ export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, can
           onSuccess: (result) => {
             if (result.next) toast.success(nextCopyMessage(result.next));
           },
-          onError: (error) => toast.error(`Couldn't move the task: ${errorMessage(error)}`),
+          onError: (error) => toast.error(t('Couldn’t move the task: {error}', { error: errorMessage(error) })),
         },
       );
     }
@@ -200,21 +202,23 @@ export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, can
 
   const nameOf = (id: UniqueIdentifier | undefined) => {
     const c = id !== undefined ? columnOf(id) : undefined;
-    return c !== undefined ? (columnById.get(c)?.name ?? 'a column') : undefined;
+    return c !== undefined ? (columnById.get(c)?.name ?? t('a column')) : undefined;
   };
 
+  const titleOf = (id: UniqueIdentifier) => tasksById.get(Number(id))?.title ?? t('the task');
   const announcements: Announcements = {
-    onDragStart: ({ active }) => `Picked up ${tasksById.get(Number(active.id))?.title ?? 'task'}.`,
+    onDragStart: ({ active }) => t('Picked up {title}.', { title: titleOf(active.id) }),
     onDragOver: ({ active, over }) => {
       const name = nameOf(over?.id);
-      return name ? `${tasksById.get(Number(active.id))?.title ?? 'Task'} is over ${name}.` : undefined;
+      return name ? t('{title} is over {column}.', { title: titleOf(active.id), column: name }) : undefined;
     },
     onDragEnd: ({ active, over }) => {
       const name = nameOf(over?.id);
-      const title = tasksById.get(Number(active.id))?.title ?? 'Task';
-      return name ? `${title} dropped in ${name}.` : `${title} dropped.`;
+      return name
+        ? t('{title} dropped in {column}.', { title: titleOf(active.id), column: name })
+        : t('{title} dropped.', { title: titleOf(active.id) });
     },
-    onDragCancel: ({ active }) => `Moving ${tasksById.get(Number(active.id))?.title ?? 'task'} was cancelled.`,
+    onDragCancel: ({ active }) => t('Moving {title} was cancelled.', { title: titleOf(active.id) }),
   };
 
   const activeTask = activeId !== null ? tasksById.get(activeId) : undefined;
@@ -234,8 +238,9 @@ export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, can
       accessibility={{
         announcements,
         screenReaderInstructions: {
-          draggable:
+          draggable: t(
             'To move a task, press Space to pick it up, use the arrow keys to move it, and press Space again to drop it. Press Enter to open it.',
+          ),
         },
       }}
     >
@@ -323,7 +328,7 @@ function BoardColumnView({
         {renaming ? (
           <RenameColumn column={column} onDone={() => setRenaming(false)} />
         ) : (
-          <h3 className="truncate" title={`${column.name} (${TASK_STATUS_LABELS[column.stage]})`}>
+          <h3 className="truncate" title={`${column.name} (${t(TASK_STATUS_LABELS[column.stage])})`}>
             {column.name}
           </h3>
         )}
@@ -334,8 +339,8 @@ function BoardColumnView({
             type="button"
             className="icon-btn icon-btn-sm"
             onClick={() => setComposing(true)}
-            aria-label={`Add task to ${column.name}`}
-            title="Add task"
+            aria-label={t('Add task to {name}', { name: column.name })}
+            title={t('Add task')}
           >
             <Plus size={16} />
           </button>
@@ -343,32 +348,32 @@ function BoardColumnView({
         {canEdit && !renaming && (
           <Menu
             trigger={(props) => (
-              <button type="button" className="icon-btn icon-btn-sm" aria-label={`Options for column ${column.name}`} {...props}>
+              <button type="button" className="icon-btn icon-btn-sm" aria-label={t('Options for column {name}', { name: column.name })} {...props}>
                 <Ellipsis size={16} />
               </button>
             )}
           >
             <MenuItem icon={<Pencil size={16} />} onSelect={() => setRenaming(true)}>
-              Rename
+              {t('Rename')}
             </MenuItem>
             <MenuSeparator />
-            <MenuLabel>Counts as</MenuLabel>
+            <MenuLabel>{t('Counts as')}</MenuLabel>
             {TASK_STATUSES.map((stage) => (
               <MenuItem key={stage} icon={<StatusIcon status={stage} size={16} />} onSelect={() => setStage(stage)}>
-                {TASK_STATUS_LABELS[stage]}
+                {t(TASK_STATUS_LABELS[stage])}
                 {column.stage === stage && <span className="muted" style={{ marginLeft: 'auto' }}>✓</span>}
               </MenuItem>
             ))}
             <MenuSeparator />
             <MenuItem icon={<ArrowLeft size={16} />} onSelect={() => moveColumn(-1)} disabled={index === 0}>
-              Move left
+              {t('Move left')}
             </MenuItem>
             <MenuItem icon={<ArrowRight size={16} />} onSelect={() => moveColumn(1)} disabled={index === columns.length - 1}>
-              Move right
+              {t('Move right')}
             </MenuItem>
             <MenuSeparator />
             <MenuItem icon={<Trash2 size={16} />} danger onSelect={() => setDeleting(true)}>
-              Delete column…
+              {t('Delete column…')}
             </MenuItem>
           </Menu>
         )}
@@ -389,13 +394,13 @@ function BoardColumnView({
               />
             );
           })}
-          {taskIds.length === 0 && !composing && <div className="board-empty">No tasks</div>}
+          {taskIds.length === 0 && !composing && <div className="board-empty">{t('No tasks')}</div>}
           {composing ? (
             <QuickAdd projectId={project.id} column={column} onDone={() => setComposing(false)} />
           ) : (
             !readOnly && (
               <button type="button" className="board-add" onClick={() => setComposing(true)}>
-                <Plus size={15} aria-hidden /> Add task
+                <Plus size={15} aria-hidden /> {t('Add task')}
               </button>
             )
           )}
@@ -424,7 +429,7 @@ function RenameColumn({ column, onDone }: { column: BoardColumn; onDone: () => v
       value={name}
       maxLength={40}
       autoFocus
-      aria-label="Column name"
+      aria-label={t('Column name')}
       onChange={(e) => setName(e.target.value)}
       onBlur={save}
       onKeyDown={(e) => {
@@ -463,7 +468,7 @@ function DeleteColumnDialog({
       { id: column.id, moveTo },
       {
         onSuccess: () => {
-          toast.success(`Column “${column.name}” deleted`);
+          toast.success(t('Column “{name}” deleted', { name: column.name }));
           onClose();
         },
         onError: (e) => toast.error(errorMessage(e)),
@@ -474,15 +479,15 @@ function DeleteColumnDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Delete “${column.name}”?`}
+      title={t('Delete “{name}”?', { name: column.name })}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button type="button" className="btn btn-danger" onClick={submit} disabled={remove.isPending || lastDone || lastOpen || !moveTo}>
             {remove.isPending && <Spinner size={16} />}
-            Delete column
+            {t('Delete column')}
           </button>
         </>
       }
@@ -490,16 +495,19 @@ function DeleteColumnDialog({
       <div className="modal-body stack" style={{ gap: 12 }}>
         {lastDone || lastOpen ? (
           <p className="secondary">
-            A board needs at least one column for {lastDone ? 'finished' : 'unfinished'} work. Add another one first, or change what this column
-            counts as.
+            {lastDone
+              ? t('A board needs at least one column for finished work. Add another one first, or change what this column counts as.')
+              : t('A board needs at least one column for unfinished work. Add another one first, or change what this column counts as.')}
           </p>
         ) : (
           <>
             <p className="secondary">
-              {count === 0 ? 'The column is empty.' : `Its ${count === 1 ? 'task moves' : `${count} tasks move`} to another column.`}
+              {count === 0
+                ? t('The column is empty.')
+                : tn('Its task moves to another column.', 'Its {count} tasks move to another column.', count)}
             </p>
             <label className="field">
-              <span className="field-label">Move tasks to</span>
+              <span className="field-label">{t('Move tasks to')}</span>
               <select className="select" value={moveTo} onChange={(e) => setMoveTo(Number(e.target.value))}>
                 {others.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -538,7 +546,7 @@ function AddColumn({ projectId, open, onOpenChange: setOpen }: { projectId: numb
 
   if (!open) {
     return (
-      <button type="button" className="board-add-column" onClick={() => setOpen(true)} aria-label="Add column" title="Add column">
+      <button type="button" className="board-add-column" onClick={() => setOpen(true)} aria-label={t('Add column')} title={t('Add column')}>
         <Plus size={18} aria-hidden />
       </button>
     );
@@ -546,26 +554,26 @@ function AddColumn({ projectId, open, onOpenChange: setOpen }: { projectId: numb
   return (
     <form className="board-column board-new-column" onSubmit={submit}>
       <label className="field">
-        <span className="field-label">Column name</span>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus placeholder="e.g. Waiting for client" />
+        <span className="field-label">{t('Column name')}</span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus placeholder={t('e.g. Waiting for client')} />
       </label>
       <label className="field">
-        <span className="field-label">Counts as</span>
+        <span className="field-label">{t('Counts as')}</span>
         <select className="select" value={stage} onChange={(e) => setStage(e.target.value as TaskStatus)}>
           {TASK_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {TASK_STATUS_LABELS[s]}
+              {t(TASK_STATUS_LABELS[s])}
             </option>
           ))}
         </select>
-        <span className="field-hint">Progress and the dashboard use this.</span>
+        <span className="field-hint">{t('Progress and the dashboard use this.')}</span>
       </label>
       <div className="row">
         <button type="submit" className="btn btn-primary btn-sm" disabled={add.isPending || !name.trim()}>
-          Add column
+          {t('Add column')}
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </form>
@@ -595,7 +603,7 @@ const SortableCard = memo(function SortableCard({
       {...listeners}
       // A read-only board can't be dragged, but its cards still open: don't announce them as disabled.
       aria-disabled={undefined}
-      aria-roledescription={disabled ? 'Task' : 'Draggable task'}
+      aria-roledescription={disabled ? t('Task') : t('Draggable task')}
       aria-label={task.title}
       onClick={() => onOpen(task.id)}
       onKeyDown={(event) => {
@@ -628,34 +636,34 @@ export function TaskCard({
       <div className="task-card-meta">
         <PriorityIcon priority={task.priority} />
         {blocked && (
-          <span className="chip chip-blocked" title={`Waiting for ${task.openBlockerCount} other ${task.openBlockerCount === 1 ? 'task' : 'tasks'}`}>
+          <span className="chip chip-blocked" title={tn('Waiting for {count} other task', 'Waiting for {count} other tasks', task.openBlockerCount)}>
             <Lock size={12} aria-hidden />
-            Blocked
+            {t('Blocked')}
           </span>
         )}
         <DueChip dueDate={task.dueDate} status={task.status} />
         {task.recurrence && (
-          <span className="chip" title={describeRecurrence(task.recurrence)}>
-            <Repeat size={13} aria-label={describeRecurrence(task.recurrence)} />
+          <span className="chip" title={describeRecurrence(task.recurrence, tr())}>
+            <Repeat size={13} aria-label={describeRecurrence(task.recurrence, tr())} />
           </span>
         )}
         {task.checklistTotal > 0 && (
           <span
             className={`chip ${task.checklistDone === task.checklistTotal ? 'chip-complete' : ''}`}
-            title={`${task.checklistDone} of ${task.checklistTotal} checklist items done`}
+            title={t('{done} of {total} checklist items done', { done: task.checklistDone, total: task.checklistTotal })}
           >
             <ListChecks size={13} aria-hidden />
             {task.checklistDone}/{task.checklistTotal}
           </span>
         )}
         {task.attachmentCount > 0 && (
-          <span className="chip" title={`${task.attachmentCount} ${task.attachmentCount === 1 ? 'file' : 'files'}`}>
+          <span className="chip" title={tn('{count} file', '{count} files', task.attachmentCount)}>
             <Paperclip size={13} aria-hidden />
             {task.attachmentCount}
           </span>
         )}
         {task.commentCount > 0 && (
-          <span className="chip" title={`${task.commentCount} comments`}>
+          <span className="chip" title={tn('{count} comment', '{count} comments', task.commentCount)}>
             <MessageSquare size={13} aria-hidden />
             {task.commentCount}
           </span>
@@ -696,8 +704,8 @@ function QuickAdd({ projectId, column, onDone }: { projectId: number; column: Bo
         rows={2}
         autoFocus
         value={title}
-        placeholder="Task title… (Enter to add, Esc to close)"
-        aria-label={`New task in ${column.name}`}
+        placeholder={t('Task title… (Enter to add, Esc to close)')}
+        aria-label={t('New task in {name}', { name: column.name })}
         onChange={(e) => setTitle(e.target.value.replace(/\n/g, ' '))}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -714,10 +722,10 @@ function QuickAdd({ projectId, column, onDone }: { projectId: number; column: Bo
       />
       <div className="row">
         <button type="button" className="btn btn-primary btn-sm" onMouseDown={(e) => e.preventDefault()} onClick={submit} disabled={create.isPending}>
-          Add
+          {t('Add')}
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onDone}>
-          Cancel
+          {t('Cancel')}
         </button>
       </div>
     </div>

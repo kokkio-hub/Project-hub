@@ -6,6 +6,7 @@ import { useDuplicateProject } from '../../api/board';
 import { ErrorNotice, Spinner, useToast } from '../../components/Feedback';
 import { Field } from '../../components/Form';
 import { Modal } from '../../components/Modal';
+import { t } from '../../i18n';
 
 /** Copy a project, or save it as a template for future projects. */
 export function DuplicateDialog({
@@ -19,7 +20,7 @@ export function DuplicateDialog({
   onClose: () => void;
 }) {
   return (
-    <Modal open={mode !== null} onClose={onClose} title={mode === 'template' ? 'Save as template' : 'Duplicate project'}>
+    <Modal open={mode !== null} onClose={onClose} title={mode === 'template' ? t('Save as template') : t('Duplicate project')}>
       {mode && <DuplicateForm project={project} mode={mode} onClose={onClose} />}
     </Modal>
   );
@@ -31,7 +32,7 @@ function DuplicateForm({ project, mode, onClose }: { project: Project; mode: 'co
   const toast = useToast();
   const template = mode === 'template';
   const [form, setForm] = useState({
-    name: template ? `${project.name} (template)` : `${project.name} (copy)`,
+    name: template ? t('{name} (template)', { name: project.name }) : t('{name} (copy)', { name: project.name }),
     startDate: '',
     includeTasks: true,
     keepAssignees: !template,
@@ -52,7 +53,7 @@ function DuplicateForm({ project, mode, onClose }: { project: Project; mode: 'co
       },
       {
         onSuccess: (created) => {
-          toast.success(template ? 'Template saved' : 'Project duplicated');
+          toast.success(template ? t('Template saved') : t('Project duplicated'));
           onClose();
           navigate(`/projects/${created.id}`);
         },
@@ -73,28 +74,28 @@ function DuplicateForm({ project, mode, onClose }: { project: Project; mode: 'co
         {duplicate.error && !Object.keys(fields).length && <ErrorNotice error={duplicate.error} />}
         <p className="secondary">
           {template
-            ? 'A template keeps the columns, labels and tasks, so new projects can start from it. It doesn’t show up as work on the dashboard.'
-            : 'The copy gets the same columns and labels. You become its owner.'}
+            ? t('A template keeps the columns, labels and tasks, so new projects can start from it. It doesn’t show up as work on the dashboard.')
+            : t('The copy gets the same columns and labels. You become its owner.')}
         </p>
-        <Field label="Name" htmlFor="dup-name" error={fields.name}>
+        <Field label={t('Name')} htmlFor="dup-name" error={fields.name}>
           <input id="dup-name" className="input" value={form.name} maxLength={120} autoFocus onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
-        <Field label="New start date" htmlFor="dup-start" hint="Optional. Every date moves by the same number of days.">
+        <Field label={t('New start date')} htmlFor="dup-start" hint={t('Optional. Every date moves by the same number of days.')}>
           <input id="dup-start" type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
         </Field>
         <div className="stack" style={{ gap: 8 }}>
-          {check('includeTasks', 'Copy the tasks, with their checklists and dependencies')}
-          {check('keepAssignees', 'Keep who each task is assigned to', !form.includeTasks)}
-          {check('resetProgress', 'Start every task from the beginning (first column, checklists unticked)', !form.includeTasks)}
+          {check('includeTasks', t('Copy the tasks, with their checklists and dependencies'))}
+          {check('keepAssignees', t('Keep who each task is assigned to'), !form.includeTasks)}
+          {check('resetProgress', t('Start every task from the beginning (first column, checklists unticked)'), !form.includeTasks)}
         </div>
       </div>
       <div className="modal-footer">
         <button type="button" className="btn" onClick={onClose}>
-          Cancel
+          {t('Cancel')}
         </button>
         <button type="submit" className="btn btn-primary" disabled={duplicate.isPending || !form.name.trim()}>
           {duplicate.isPending && <Spinner size={16} />}
-          {template ? 'Save template' : 'Duplicate'}
+          {template ? t('Save template') : t('Duplicate')}
         </button>
       </div>
     </form>

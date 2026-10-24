@@ -12,6 +12,7 @@ describe('first-run setup', () => {
       emailEnabled: false,
       passwordResetEnabled: false,
       uploadLimitBytes: 25 * 1024 * 1024,
+      defaultLanguage: null,
     });
   });
 

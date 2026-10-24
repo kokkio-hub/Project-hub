@@ -5,6 +5,7 @@ import { gunzipSync } from 'node:zlib';
 import { loadConfig, loadEnvFile, type Config } from './config.js';
 import { openDatabase, type DB } from './db/index.js';
 import { testEmail } from './lib/emails.js';
+import { trFor } from './i18n/index.js';
 import { createMailer } from './lib/mailer.js';
 import { generateTemporaryPassword, hashPassword } from './auth/password.js';
 import { deleteUserSessions } from './auth/sessions.js';
@@ -153,7 +154,7 @@ async function sendTestEmail(config: Config, values: Record<string, unknown>) {
   console.log(`Connecting to ${mailer.description}...`);
   try {
     await mailer.verify();
-    await mailer.send({ to, ...testEmail(config.appName) });
+    await mailer.send({ to, ...testEmail(config.appName, trFor(config.defaultLanguage ?? 'en')) });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }

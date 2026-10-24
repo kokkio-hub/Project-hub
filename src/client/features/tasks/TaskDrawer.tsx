@@ -46,10 +46,11 @@ import { Attachments } from './Attachments';
 import { Checklist } from './Checklist';
 import { Dependencies } from './Dependencies';
 import { MentionText, MentionTextarea } from './Mentions';
+import { t, tr } from '../../i18n';
 
 export function TaskDrawer({ taskId, onClose }: { taskId: number | null; onClose: () => void }) {
   return (
-    <Modal open={taskId !== null} onClose={onClose} title="Task" className="drawer" header={<></>} labelledBy="task-title">
+    <Modal open={taskId !== null} onClose={onClose} title={t('Task')} className="drawer" header={<></>} labelledBy="task-title">
       {taskId !== null && <TaskDetails key={taskId} taskId={taskId} onClose={onClose} />}
     </Modal>
   );
@@ -86,15 +87,17 @@ export function mentionableUsers(users: User[], project: Project | undefined): U
   );
 }
 
-const REPEAT_OPTIONS: { label: string; value: Recurrence | null }[] = [
-  { label: 'Doesn’t repeat', value: null },
-  { label: 'Every day', value: { freq: 'daily', interval: 1 } },
-  { label: 'Every week', value: { freq: 'weekly', interval: 1 } },
-  { label: 'Every 2 weeks', value: { freq: 'weekly', interval: 2 } },
-  { label: 'Every month', value: { freq: 'monthly', interval: 1 } },
-  { label: 'Every 3 months', value: { freq: 'monthly', interval: 3 } },
-  { label: 'Every year', value: { freq: 'yearly', interval: 1 } },
+const REPEAT_OPTIONS: (Recurrence | null)[] = [
+  null,
+  { freq: 'daily', interval: 1 },
+  { freq: 'weekly', interval: 1 },
+  { freq: 'weekly', interval: 2 },
+  { freq: 'monthly', interval: 1 },
+  { freq: 'monthly', interval: 3 },
+  { freq: 'yearly', interval: 1 },
 ];
+
+const repeatLabel = (value: Recurrence | null) => (value ? describeRecurrence(value, tr()) : t('Doesn’t repeat'));
 
 const repeatKey = (r: Recurrence | null) => (r ? `${r.freq}:${r.interval}` : '');
 
@@ -111,21 +114,19 @@ export function RepeatSelect({
   id?: string;
   className?: string;
 }) {
-  const options = REPEAT_OPTIONS.some((o) => repeatKey(o.value) === repeatKey(value))
-    ? REPEAT_OPTIONS
-    : [...REPEAT_OPTIONS, { label: describeRecurrence(value!), value }];
+  const options = REPEAT_OPTIONS.some((o) => repeatKey(o) === repeatKey(value)) ? REPEAT_OPTIONS : [...REPEAT_OPTIONS, value];
   return (
     <select
       id={id}
       className={className}
       value={repeatKey(value)}
       disabled={disabled}
-      aria-label="Repeats"
-      onChange={(e) => onChange(options.find((o) => repeatKey(o.value) === e.target.value)?.value ?? null)}
+      aria-label={t('Repeats')}
+      onChange={(e) => onChange(options.find((o) => repeatKey(o) === e.target.value) ?? null)}
     >
       {options.map((o) => (
-        <option key={repeatKey(o.value)} value={repeatKey(o.value)}>
-          {o.label}
+        <option key={repeatKey(o)} value={repeatKey(o)}>
+          {repeatLabel(o)}
         </option>
       ))}
     </select>
@@ -137,7 +138,7 @@ function DrawerHeader({ children, onClose }: { children?: ReactNode; onClose: ()
     <div className="drawer-header">
       {children}
       <span className="spacer" />
-      <button type="button" className="icon-btn" onClick={onClose} aria-label="Close task">
+      <button type="button" className="icon-btn" onClick={onClose} aria-label={t('Close task')}>
         <X size={18} />
       </button>
     </div>
@@ -189,26 +190,26 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
       <>
         <DrawerHeader onClose={onClose} />
         <div className="drawer-body">
-          <ErrorNotice error={gone ? new Error('This task no longer exists. It may have been deleted, or you don’t have access to it.') : task.error} />
+          <ErrorNotice error={gone ? new Error(t('This task no longer exists. It may have been deleted, or you don’t have access to it.')) : task.error} />
         </div>
       </>
     );
   }
 
-  const t = task.data;
-  const project = projectsById.get(t.projectId);
+  const item = task.data;
+  const project = projectsById.get(item.projectId);
   const archived = project?.status === 'archived';
   const guest = !canChangeWork(me);
   const readOnly = archived || guest;
   const manager = me.role === 'admin' || (project?.ownerId ?? null) === me.id;
-  const canDelete = !guest && (manager || t.createdBy === me.id);
-  const creator = t.createdBy ? byId.get(t.createdBy) : undefined;
+  const canDelete = !guest && (manager || item.createdBy === me.id);
+  const creator = item.createdBy ? byId.get(item.createdBy) : undefined;
   const columns = [...(project?.columns ?? [])].sort((a, b) => a.position - b.position);
-  const column = columns.find((c) => c.id === t.columnId);
+  const column = columns.find((c) => c.id === item.columnId);
 
   const save = (patch: TaskPatch) =>
     update.mutate(
-      { id: t.id, patch },
+      { id: item.id, patch },
       {
         onSuccess: (result) => {
           if (result.next) toast.success(nextCopyMessage(result.next));
@@ -221,22 +222,22 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
     if (!plausibleDate(value)) return;
     const startDate = value || null;
     const patch: TaskPatch = { startDate };
-    if (startDate && t.dueDate && startDate > t.dueDate) patch.dueDate = startDate;
+    if (startDate && item.dueDate && startDate > item.dueDate) patch.dueDate = startDate;
     save(patch);
   };
   const setDue = (value: string) => {
     if (!plausibleDate(value)) return;
     const dueDate = value || null;
     const patch: TaskPatch = { dueDate };
-    if (dueDate && t.startDate && dueDate < t.startDate) patch.startDate = dueDate;
+    if (dueDate && item.startDate && dueDate < item.startDate) patch.startDate = dueDate;
     save(patch);
   };
 
   const copyLink = async () => {
-    const url = `${window.location.origin}${window.location.pathname}?task=${t.id}`;
+    const url = `${window.location.origin}${window.location.pathname}?task=${item.id}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Link copied');
+      toast.success(t('Link copied'));
     } catch {
       toast.info(url);
     }
@@ -244,22 +245,22 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
 
   const deleteTask = async () => {
     const ok = await confirm({
-      title: 'Delete this task?',
-      message: `“${t.title}” moves to the trash. You can restore it from there for 30 days.`,
-      confirmLabel: 'Delete task',
+      title: t('Delete this task?'),
+      message: t('“{title}” moves to the trash. You can restore it from there for 30 days.', { title: item.title }),
+      confirmLabel: t('Delete task'),
       danger: true,
     });
     if (!ok) return;
-    const item = { kind: 'task' as const, id: t.id };
+    const trashItem = { kind: 'task' as const, id: item.id };
     setDeleted(true);
     onClose();
-    remove.mutateAsync(t.id).then(
+    remove.mutateAsync(item.id).then(
       () =>
-        toast.success('Task moved to the trash', {
-          label: 'Undo',
+        toast.success(t('Task moved to the trash'), {
+          label: t('Undo'),
           onClick: () =>
-            void undoDelete(queryClient, item).then(
-              () => toast.success('Task restored'),
+            void undoDelete(queryClient, trashItem).then(
+              () => toast.success(t('Task restored')),
               (error) => toast.error(errorMessage(error)),
             ),
         }),
@@ -277,22 +278,22 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
           </Link>
         )}
         <span className="muted num" style={{ fontSize: 'var(--text-sm)' }}>
-          #{t.id}
+          #{item.id}
         </span>
         <span className="spacer" />
-        <button type="button" className="icon-btn" onClick={copyLink} aria-label="Copy link to task" title="Copy link">
+        <button type="button" className="icon-btn" onClick={copyLink} aria-label={t('Copy link to task')} title={t('Copy link')}>
           <Link2 size={17} />
         </button>
         {canDelete && !archived && (
           <Menu
             trigger={(props) => (
-              <button type="button" className="icon-btn" aria-label="More actions" {...props}>
+              <button type="button" className="icon-btn" aria-label={t('More actions')} {...props}>
                 <Ellipsis size={18} />
               </button>
             )}
           >
             <MenuItem icon={<Trash2 size={16} />} danger onSelect={deleteTask}>
-              Delete task
+              {t('Delete task')}
             </MenuItem>
           </Menu>
         )}
@@ -302,123 +303,125 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
         {archived && (
           <div className="alert alert-info" style={{ marginBottom: 14 }}>
             <Archive size={16} aria-hidden />
-            This project is archived, so its tasks are read-only.
+            {t('This project is archived, so its tasks are read-only.')}
           </div>
         )}
         {guest && !archived && (
           <div className="alert alert-info" style={{ marginBottom: 14 }}>
             <Eye size={16} aria-hidden />
-            You’re a guest here: you can read everything and leave comments.
+            {t('You’re a guest here: you can read everything and leave comments.')}
           </div>
         )}
 
-        <TitleEditor task={t} readOnly={readOnly} onSave={(title) => save({ title })} />
+        <TitleEditor task={item} readOnly={readOnly} onSave={(title) => save({ title })} />
 
         <dl className="props">
-          <dt>Column</dt>
+          <dt>{t('Column')}</dt>
           <dd>
-            <StatusIcon status={t.status} />
+            <StatusIcon status={item.status} />
             {readOnly ? (
-              <span>{column?.name ?? TASK_STATUS_LABELS[t.status]}</span>
+              <span>{column?.name ?? t(TASK_STATUS_LABELS[item.status])}</span>
             ) : (
               <select
                 className="select select-sm"
-                value={t.columnId ?? ''}
-                aria-label="Column"
+                value={item.columnId ?? ''}
+                aria-label={t('Column')}
                 onChange={(e) => save({ columnId: Number(e.target.value) })}
               >
                 {columns.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
-                    {c.name.toLowerCase() !== TASK_STATUS_LABELS[c.stage].toLowerCase() ? ` (${TASK_STATUS_LABELS[c.stage]})` : ''}
+                    {[TASK_STATUS_LABELS[c.stage], t(TASK_STATUS_LABELS[c.stage])].some((label) => label.toLowerCase() === c.name.toLowerCase())
+                      ? ''
+                      : ` (${t(TASK_STATUS_LABELS[c.stage])})`}
                   </option>
                 ))}
               </select>
             )}
           </dd>
 
-          <dt>Priority</dt>
+          <dt>{t('Priority')}</dt>
           <dd>
-            <PriorityIcon priority={t.priority} />
+            <PriorityIcon priority={item.priority} />
             <select
               className="select select-sm"
-              value={t.priority}
+              value={item.priority}
               disabled={readOnly}
-              aria-label="Priority"
+              aria-label={t('Priority')}
               onChange={(e) => save({ priority: e.target.value as TaskPriority })}
             >
               {TASK_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
-                  {TASK_PRIORITY_LABELS[p]}
+                  {t(TASK_PRIORITY_LABELS[p])}
                 </option>
               ))}
             </select>
           </dd>
 
-          <dt>Assignee</dt>
+          <dt>{t('Assignee')}</dt>
           <dd>
-            <Avatar user={t.assigneeId ? byId.get(t.assigneeId) : null} size="sm" />
+            <Avatar user={item.assigneeId ? byId.get(item.assigneeId) : null} size="sm" />
             <UserSelect
               users={assignableUsers(users, project)}
-              value={t.assigneeId}
+              value={item.assigneeId}
               onChange={(assigneeId) => save({ assigneeId })}
               className="select select-sm"
               disabled={readOnly}
             />
           </dd>
 
-          <dt>Start date</dt>
+          <dt>{t('Start date')}</dt>
           <dd>
             <input
               type="date"
               className="input input-sm"
-              value={t.startDate ?? ''}
-              max={t.dueDate ?? undefined}
+              value={item.startDate ?? ''}
+              max={item.dueDate ?? undefined}
               disabled={readOnly}
-              aria-label="Start date"
+              aria-label={t('Start date')}
               onChange={(e) => setStart(e.target.value)}
             />
           </dd>
 
-          <dt>Due date</dt>
+          <dt>{t('Due date')}</dt>
           <dd>
             <input
               type="date"
               className="input input-sm"
-              value={t.dueDate ?? ''}
+              value={item.dueDate ?? ''}
               disabled={readOnly}
-              aria-label="Due date"
+              aria-label={t('Due date')}
               onChange={(e) => setDue(e.target.value)}
             />
-            <DueChip dueDate={t.dueDate} status={t.status} showIcon />
+            <DueChip dueDate={item.dueDate} status={item.status} showIcon />
           </dd>
 
-          <dt>Repeats</dt>
+          <dt>{t('Repeats')}</dt>
           <dd>
             <Repeat size={14} className="secondary" aria-hidden />
-            <RepeatSelect value={t.recurrence} onChange={(recurrence) => save({ recurrence })} disabled={readOnly} />
+            <RepeatSelect value={item.recurrence} onChange={(recurrence) => save({ recurrence })} disabled={readOnly} />
           </dd>
 
-          <dt>Labels</dt>
+          <dt>{t('Labels')}</dt>
           <dd className="labels-prop">
-            <LabelList ids={t.labelIds} labels={project?.labels ?? []} size="md" />
+            <LabelList ids={item.labelIds} labels={project?.labels ?? []} size="md" />
             {!readOnly && project && (
-              <LabelPicker projectId={project.id} labels={project.labels} value={t.labelIds} onChange={(labelIds) => save({ labelIds })} />
+              <LabelPicker projectId={project.id} labels={project.labels} value={item.labelIds} onChange={(labelIds) => save({ labelIds })} />
             )}
-            {readOnly && t.labelIds.length === 0 && <span className="muted">None</span>}
+            {readOnly && item.labelIds.length === 0 && <span className="muted">{t('None')}</span>}
           </dd>
 
-          <dt>Project</dt>
+          <dt>{t('Project')}</dt>
           <dd>
             <select
               className="select select-sm"
-              value={t.projectId}
+              value={item.projectId}
               disabled={readOnly}
-              aria-label="Project"
+              aria-label={t('Project')}
               onChange={(e) => save({ projectId: Number(e.target.value) })}
             >
               {(projects ?? [])
-                .filter((p) => (p.status !== 'archived' && p.isTemplate === project?.isTemplate) || p.id === t.projectId)
+                .filter((p) => (p.status !== 'archived' && p.isTemplate === project?.isTemplate) || p.id === item.projectId)
                 .map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -428,27 +431,28 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
           </dd>
         </dl>
 
-        <DescriptionEditor task={t} readOnly={readOnly} onSave={(description) => save({ description })} />
+        <DescriptionEditor task={item} readOnly={readOnly} onSave={(description) => save({ description })} />
 
-        <Checklist taskId={t.id} readOnly={readOnly} />
+        <Checklist taskId={item.id} readOnly={readOnly} />
 
-        <Dependencies task={t} projectsById={projectsById} readOnly={readOnly} />
+        <Dependencies task={item} projectsById={projectsById} readOnly={readOnly} />
 
         <Attachments
-          taskId={t.id}
+          taskId={item.id}
           readOnly={readOnly}
           usersById={byId}
           canDelete={(a) => !guest && (a.userId === me.id || manager)}
         />
 
-        <Comments taskId={t.id} readOnly={archived} people={mentionableUsers(users, project)} />
+        <Comments taskId={item.id} readOnly={archived} people={mentionableUsers(users, project)} />
 
-        <History taskId={t.id} />
+        <History taskId={item.id} />
 
         <p className="drawer-meta">
-          Created {creator ? `by ${creator.name} ` : ''}
-          {formatDateTime(t.createdAt)}
-          {t.completedAt && ` · Completed ${formatDateTime(t.completedAt)}`}
+          {creator
+            ? t('Created by {name} {time}', { name: creator.name, time: formatDateTime(item.createdAt) })
+            : t('Created {time}', { time: formatDateTime(item.createdAt) })}
+          {item.completedAt && ` · ${t('Completed {time}', { time: formatDateTime(item.completedAt) })}`}
         </p>
       </div>
     </>
@@ -486,7 +490,7 @@ function TitleEditor({ task, readOnly, onSave }: { task: Task; readOnly: boolean
       rows={1}
       maxLength={200}
       readOnly={readOnly}
-      aria-label="Task title"
+      aria-label={t('Task title')}
       onChange={(e) => setValue(e.target.value.replace(/\n/g, ' '))}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -531,12 +535,12 @@ function DescriptionEditor({
 
   return (
     <section className="drawer-section">
-      <h3 className="section-title">Description</h3>
+      <h3 className="section-title">{t('Description')}</h3>
       <textarea
         ref={ref}
         className="textarea description-input"
         value={value}
-        placeholder={readOnly ? 'No description.' : 'Add details, links or acceptance criteria…'}
+        placeholder={readOnly ? t('No description.') : t('Add details, links or acceptance criteria…')}
         readOnly={readOnly}
         onFocus={() => setFocused(true)}
         onChange={(e) => setValue(e.target.value)}
@@ -545,7 +549,7 @@ function DescriptionEditor({
           if (value !== task.description) onSave(value);
         }}
         rows={3}
-        aria-label="Description"
+        aria-label={t('Description')}
       />
     </section>
   );
@@ -573,7 +577,7 @@ function Comments({ taskId, readOnly, people }: { taskId: number; readOnly: bool
   return (
     <section className="drawer-section">
       <h3 className="section-title">
-        Comments {comments && comments.length > 0 && <span className="muted">{comments.length}</span>}
+        {t('Comments')} {comments && comments.length > 0 && <span className="muted">{comments.length}</span>}
       </h3>
       {isPending ? (
         <Spinner />
@@ -602,8 +606,8 @@ function Comments({ taskId, readOnly, people }: { taskId: number; readOnly: bool
               rows={2}
               value={draft}
               people={people.filter((p) => p.id !== me.id)}
-              placeholder="Write a comment… Type @ to mention someone."
-              aria-label="New comment"
+              placeholder={t('Write a comment… Type @ to mention someone.')}
+              aria-label={t('New comment')}
               onChange={setDraft}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -616,7 +620,7 @@ function Comments({ taskId, readOnly, people }: { taskId: number; readOnly: bool
               <div className="row">
                 <button type="button" className="btn btn-primary btn-sm" onClick={submit} disabled={add.isPending}>
                   {add.isPending && <Spinner size={14} />}
-                  Comment
+                  {t('Comment')}
                 </button>
                 <span className="muted" style={{ fontSize: 'var(--text-xs)' }}>
                   <span className="kbd">Ctrl</span> + <span className="kbd">Enter</span>
@@ -666,7 +670,7 @@ function CommentItem({
   };
 
   const del = async () => {
-    if (!(await confirm({ title: 'Delete comment?', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true }))) {
+    if (!(await confirm({ title: t('Delete comment?'), message: t('This cannot be undone.'), confirmLabel: t('Delete'), danger: true }))) {
       return;
     }
     remove.mutate(comment.id, { onError: (error) => toast.error(errorMessage(error)) });
@@ -677,20 +681,20 @@ function CommentItem({
       <Avatar user={author ?? null} size="sm" />
       <div className="comment-main">
         <div className="comment-head">
-          <strong>{author?.name ?? 'Former member'}</strong>
-          {author?.role === 'guest' && <span className="badge">Guest</span>}
+          <strong>{author?.name ?? t('Former member')}</strong>
+          {author?.role === 'guest' && <span className="badge">{t('Guest')}</span>}
           <span className="muted" title={formatDateTime(comment.createdAt)}>
             {timeAgo(comment.createdAt)}
-            {comment.updatedAt !== comment.createdAt && ' · edited'}
+            {comment.updatedAt !== comment.createdAt && ` · ${t('edited')}`}
           </span>
           <span className="spacer" />
           {canEdit && !editing && (
-            <button type="button" className="icon-btn icon-btn-sm" onClick={() => setEditing(true)} aria-label="Edit comment">
+            <button type="button" className="icon-btn icon-btn-sm" onClick={() => setEditing(true)} aria-label={t('Edit comment')}>
               <Pencil size={13} />
             </button>
           )}
           {canDelete && !editing && (
-            <button type="button" className="icon-btn icon-btn-sm" onClick={del} aria-label="Delete comment">
+            <button type="button" className="icon-btn icon-btn-sm" onClick={del} aria-label={t('Delete comment')}>
               <Trash2 size={13} />
             </button>
           )}
@@ -703,7 +707,7 @@ function CommentItem({
               people={people}
               onChange={setValue}
               autoFocus
-              aria-label="Edit comment"
+              aria-label={t('Edit comment')}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) save();
                 if (e.key === 'Escape') {
@@ -716,7 +720,7 @@ function CommentItem({
             />
             <div className="row">
               <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={edit.isPending}>
-                Save
+                {t('Save')}
               </button>
               <button
                 type="button"
@@ -726,7 +730,7 @@ function CommentItem({
                   setValue(comment.body);
                 }}
               >
-                Cancel
+                {t('Cancel')}
               </button>
             </div>
           </div>
@@ -746,7 +750,7 @@ function History({ taskId }: { taskId: number }) {
   const { data: activity } = useActivity({ taskId, limit: 50 }, { enabled: open });
   return (
     <details className="drawer-section history" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary className="section-title">History</summary>
+      <summary className="section-title">{t('History')}</summary>
       {open && !activity && <Spinner />}
       <ul className="history-list">
         {activity?.map((item) => (

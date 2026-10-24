@@ -1,5 +1,6 @@
 import { Search, X } from 'lucide-react';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type Label, type Task, type TaskPriority, type User } from '../../../shared/types';
+import { t } from '../../i18n';
 
 export interface TaskFilterState {
   q: string;
@@ -19,14 +20,14 @@ export function isFiltering(f: TaskFilterState): boolean {
 
 export function applyFilters(tasks: Task[], f: TaskFilterState, meId: number): Task[] {
   const q = f.q.trim().toLowerCase();
-  return tasks.filter((t) => {
-    if (f.hideDone && t.status === 'done') return false;
-    if (f.priority !== 'all' && t.priority !== f.priority) return false;
-    if (f.assignee === 'me' && t.assigneeId !== meId) return false;
-    if (f.assignee === 'none' && t.assigneeId !== null) return false;
-    if (/^\d+$/.test(f.assignee) && t.assigneeId !== Number(f.assignee)) return false;
-    if (f.label !== 'all' && !t.labelIds.includes(Number(f.label))) return false;
-    if (q && !t.title.toLowerCase().includes(q) && !t.description.toLowerCase().includes(q)) return false;
+  return tasks.filter((task) => {
+    if (f.hideDone && task.status === 'done') return false;
+    if (f.priority !== 'all' && task.priority !== f.priority) return false;
+    if (f.assignee === 'me' && task.assigneeId !== meId) return false;
+    if (f.assignee === 'none' && task.assigneeId !== null) return false;
+    if (/^\d+$/.test(f.assignee) && task.assigneeId !== Number(f.assignee)) return false;
+    if (f.label !== 'all' && !task.labelIds.includes(Number(f.label))) return false;
+    if (q && !task.title.toLowerCase().includes(q) && !task.description.toLowerCase().includes(q)) return false;
     return true;
   });
 }
@@ -56,10 +57,10 @@ export function TaskFilters({
         <input
           className="input"
           type="search"
-          placeholder="Filter tasks…"
+          placeholder={t('Filter tasks…')}
           value={value.q}
           onChange={(e) => onChange({ ...value, q: e.target.value })}
-          aria-label="Filter tasks by text"
+          aria-label={t('Filter tasks by text')}
         />
       </div>
       <select
@@ -67,11 +68,11 @@ export function TaskFilters({
         style={{ width: 'auto', minWidth: 150 }}
         value={value.assignee}
         onChange={(e) => onChange({ ...value, assignee: e.target.value })}
-        aria-label="Filter by assignee"
+        aria-label={t('Filter by assignee')}
       >
-        <option value="all">Everyone</option>
-        <option value="me">Assigned to me</option>
-        <option value="none">Unassigned</option>
+        <option value="all">{t('Everyone')}</option>
+        <option value="me">{t('Assigned to me')}</option>
+        <option value="none">{t('Unassigned')}</option>
         {active.map((u) => (
           <option key={u.id} value={String(u.id)}>
             {u.name}
@@ -83,12 +84,12 @@ export function TaskFilters({
         style={{ width: 'auto', minWidth: 130 }}
         value={value.priority}
         onChange={(e) => onChange({ ...value, priority: e.target.value as TaskFilterState['priority'] })}
-        aria-label="Filter by priority"
+        aria-label={t('Filter by priority')}
       >
-        <option value="all">Any priority</option>
+        <option value="all">{t('Any priority')}</option>
         {[...TASK_PRIORITIES].reverse().map((p) => (
           <option key={p} value={p}>
-            {TASK_PRIORITY_LABELS[p]}
+            {t(TASK_PRIORITY_LABELS[p])}
           </option>
         ))}
       </select>
@@ -98,9 +99,9 @@ export function TaskFilters({
           style={{ width: 'auto', minWidth: 120 }}
           value={value.label}
           onChange={(e) => onChange({ ...value, label: e.target.value })}
-          aria-label="Filter by label"
+          aria-label={t('Filter by label')}
         >
-          <option value="all">Any label</option>
+          <option value="all">{t('Any label')}</option>
           {labels.map((l) => (
             <option key={l.id} value={String(l.id)}>
               {l.name}
@@ -116,12 +117,12 @@ export function TaskFilters({
             checked={value.hideDone}
             onChange={(e) => onChange({ ...value, hideDone: e.target.checked })}
           />
-          Hide done
+          {t('Hide done')}
         </label>
       )}
       {isFiltering(value) && (
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange(DEFAULT_FILTERS)}>
-          <X size={14} /> Clear
+          <X size={14} /> {t('Clear')}
         </button>
       )}
       <span className="spacer" />
