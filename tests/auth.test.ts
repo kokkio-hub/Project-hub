@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
+import { loadConfig } from '../src/server/config.js';
 import { ADMIN, addMember, client, makeApp, setupAdmin } from './helpers.js';
 
 describe('first-run setup', () => {
@@ -99,6 +100,37 @@ describe('sign in and out', () => {
     }
     const blocked = await agent.post('/api/auth/login').send({ email: ADMIN.email, password: ADMIN.password });
     expect(blocked.status).toBe(429);
+  });
+
+  it('behind one proxy (TRUST_PROXY=1), a faked X-Forwarded-For does not get around the limit', async () => {
+    const trustProxy = loadConfig({ NODE_ENV: 'test', TRUST_PROXY: '1' }).trustProxy;
+    expect(trustProxy).toBe(1);
+    const t = makeApp({ loginRateLimit: 3, trustProxy });
+    await setupAdmin(t);
+    const agent = client(t.app);
+    // The proxy appends the real client address; everything before it comes from the client.
+    for (let i = 0; i < 3; i++) {
+      await agent
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', `10.0.0.${i}, 203.0.113.7`)
+        .send({ email: ADMIN.email, password: 'wrong-password' })
+        .expect(401);
+    }
+    const blocked = await agent
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', '10.9.9.9, 203.0.113.7')
+      .send({ email: ADMIN.email, password: ADMIN.password });
+    expect(blocked.status).toBe(429);
+  });
+
+  it('reads TRUST_PROXY as a number of proxies, true/false, or an address list', () => {
+    const read = (value: string) => loadConfig({ NODE_ENV: 'test', TRUST_PROXY: value }).trustProxy;
+    expect(read('')).toBe(false);
+    expect(read('0')).toBe(false);
+    expect(read('2')).toBe(2);
+    expect(read('true')).toBe(true);
+    expect(read('false')).toBe(false);
+    expect(read('loopback')).toBe('loopback');
   });
 
   it('protects API routes from anonymous access', async () => {
