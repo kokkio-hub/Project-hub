@@ -11,6 +11,7 @@ describe('first-run setup', () => {
       setupRequired: true,
       emailEnabled: false,
       passwordResetEnabled: false,
+      uploadLimitBytes: 25 * 1024 * 1024,
     });
   });
 

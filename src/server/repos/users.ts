@@ -1,6 +1,15 @@
 import type { DB } from '../db/index.js';
 import { nowIso } from '../db/index.js';
-import { COLOR_NAMES, type ColorName, type InviteStatus, type User, type UserRole } from '../../shared/types.js';
+import {
+  COLOR_NAMES,
+  type ColorName,
+  type InviteStatus,
+  type Me,
+  type NotifyEmailMode,
+  type User,
+  type UserRole,
+} from '../../shared/types.js';
+import { VISIBLE_PROJECT_IDS, viewerParams, type Viewer } from '../services/permissions.js';
 
 export interface UserRow {
   id: number;
@@ -15,6 +24,15 @@ export interface UserRow {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  notify_email: NotifyEmailMode;
+  tz_offset_minutes: number | null;
+  digest_sent_on: string | null;
+  totp_secret: string | null;
+  totp_pending_secret: string | null;
+  totp_enabled_at: string | null;
+  totp_last_counter: number | null;
+  calendar_token_hash: string | null;
+  calendar_scope: 'mine' | 'all';
 }
 
 /** Invited people who haven't accepted yet have no password. */
@@ -38,8 +56,24 @@ export function toUser(row: UserRow, options: { includePrivate?: boolean; invite
   if (options.includePrivate) {
     user.lastLoginAt = row.last_login_at;
     user.invite = options.invite ?? null;
+    user.twoFactorEnabled = row.totp_secret !== null;
   }
   return user;
+}
+
+/** The signed-in person as they see themselves, with their own settings. */
+export function toMe(db: DB, row: UserRow): Me {
+  const codes = db
+    .prepare('SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used_at IS NULL')
+    .get(row.id) as { n: number };
+  return {
+    ...toUser(row, { includePrivate: row.role === 'admin' }),
+    twoFactorEnabled: row.totp_secret !== null,
+    recoveryCodesLeft: codes.n,
+    notifyEmail: row.notify_email,
+    calendarFeed: row.calendar_token_hash !== null,
+    calendarScope: row.calendar_scope,
+  };
 }
 
 export function getUserById(db: DB, id: number): UserRow | undefined {
@@ -52,6 +86,27 @@ export function getUserByEmail(db: DB, email: string): UserRow | undefined {
 
 export function listUsers(db: DB): UserRow[] {
   return db.prepare('SELECT * FROM users ORDER BY is_active DESC, name COLLATE NOCASE').all() as UserRow[];
+}
+
+/**
+ * The people a viewer can see. Guests only see themselves and the people who
+ * take part in the projects they were added to.
+ */
+export function listUsersFor(db: DB, viewer: Viewer): UserRow[] {
+  if (viewer.role !== 'guest') return listUsers(db);
+  return db
+    .prepare(
+      `SELECT * FROM users u
+        WHERE u.id = @viewerId
+           OR u.id IN (SELECT owner_id FROM projects WHERE id IN (${VISIBLE_PROJECT_IDS}))
+           OR u.id IN (SELECT user_id FROM project_members WHERE project_id IN (${VISIBLE_PROJECT_IDS}))
+           OR u.id IN (SELECT assignee_id FROM tasks WHERE project_id IN (${VISIBLE_PROJECT_IDS}))
+           OR u.id IN (SELECT created_by FROM tasks WHERE project_id IN (${VISIBLE_PROJECT_IDS}))
+           OR u.id IN (SELECT c.user_id FROM comments c JOIN tasks t ON t.id = c.task_id
+                        WHERE t.project_id IN (${VISIBLE_PROJECT_IDS}))
+        ORDER BY u.is_active DESC, u.name COLLATE NOCASE`,
+    )
+    .all(viewerParams(viewer)) as UserRow[];
 }
 
 export function countUsers(db: DB): number {
@@ -74,7 +129,7 @@ export function deleteUser(db: DB, id: number): void {
 
 /** The least-used identity colour, ties broken by the fixed palette order. */
 export function nextColor(db: DB, table: 'users' | 'projects'): ColorName {
-  const where = table === 'projects' ? "WHERE status != 'archived'" : 'WHERE is_active = 1';
+  const where = table === 'projects' ? "WHERE status != 'archived' AND deleted_at IS NULL AND is_template = 0" : 'WHERE is_active = 1';
   const rows = db.prepare(`SELECT color, COUNT(*) AS n FROM ${table} ${where} GROUP BY color`).all() as {
     color: string;
     n: number;
@@ -134,6 +189,7 @@ export interface UserPatch {
   passwordHash?: string;
   mustChangePassword?: boolean;
   lastLoginAt?: string;
+  notifyEmail?: NotifyEmailMode;
 }
 
 export function updateUser(db: DB, id: number, patch: UserPatch): UserRow {
@@ -147,6 +203,7 @@ export function updateUser(db: DB, id: number, patch: UserPatch): UserRow {
   if (patch.passwordHash !== undefined) columns.password_hash = patch.passwordHash;
   if (patch.mustChangePassword !== undefined) columns.must_change_password = patch.mustChangePassword ? 1 : 0;
   if (patch.lastLoginAt !== undefined) columns.last_login_at = patch.lastLoginAt;
+  if (patch.notifyEmail !== undefined) columns.notify_email = patch.notifyEmail;
 
   const keys = Object.keys(columns);
   if (keys.length > 0) {

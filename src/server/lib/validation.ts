@@ -25,7 +25,7 @@ export function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T>
 }
 
 export function parseId(value: unknown, what = 'id'): number {
-  const n = typeof value === 'string' ? Number(value) : NaN;
+  const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
   if (!Number.isSafeInteger(n) || n <= 0) throw badRequest(`Invalid ${what}.`);
   return n;
 }
@@ -44,7 +44,7 @@ export const zPassword = z
   .max(PASSWORD_MAX_LENGTH, `Use at most ${PASSWORD_MAX_LENGTH} characters`);
 export const zTitle = z.string().trim().max(100, 'Use at most 100 characters');
 export const zColor = z.enum(COLOR_NAMES, 'Pick one of the available colours');
-export const zRole = z.enum(USER_ROLES, 'Role must be admin or member');
+export const zRole = z.enum(USER_ROLES, 'Role must be admin, member or guest');
 export const zDate = z.iso.date('Use the format YYYY-MM-DD');
 export const zNullableDate = zDate.nullable();
 export const zTaskStatus = z.enum(TASK_STATUSES, 'Unknown status');

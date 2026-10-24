@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect } from 'react';
-import type { User } from '../../shared/types';
+import type { Me, User } from '../../shared/types';
 
-export const CurrentUserContext = createContext<User | null>(null);
+export const CurrentUserContext = createContext<Me | null>(null);
 export const AppNameContext = createContext<string>('Project Hub');
 
 /** The signed-in person. Only use inside the authenticated part of the app. */
-export function useCurrentUser(): User {
+export function useCurrentUser(): Me {
   const user = useContext(CurrentUserContext);
   if (!user) throw new Error('useCurrentUser must be used while signed in');
   return user;
@@ -24,4 +24,9 @@ export function useDocumentTitle(title: string | undefined): void {
 
 export function canManageProject(user: User, project: { ownerId: number | null }): boolean {
   return user.role === 'admin' || project.ownerId === user.id;
+}
+
+/** Guests can look and comment; everyone else can also change the work. */
+export function canChangeWork(user: Pick<User, 'role'>): boolean {
+  return user.role !== 'guest';
 }

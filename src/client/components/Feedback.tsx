@@ -8,16 +8,23 @@ import { Modal } from './Modal';
 // ---------------------------------------------------------------------------
 
 type ToastKind = 'success' | 'error' | 'info';
+/** A button in the toast, such as "Undo". */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastItem {
   id: number;
   kind: ToastKind;
   message: string;
+  action?: ToastAction;
 }
 
 interface ToastApi {
-  success: (message: string) => void;
+  success: (message: string, action?: ToastAction) => void;
   error: (message: string) => void;
-  info: (message: string) => void;
+  info: (message: string, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -41,10 +48,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((id: number) => setToasts((list) => list.filter((t) => t.id !== id)), []);
 
   const push = useCallback(
-    (kind: ToastKind, message: string) => {
+    (kind: ToastKind, message: string, action?: ToastAction) => {
       const id = nextToastId++;
-      setToasts((list) => [...list.slice(-3), { id, kind, message }]);
-      window.setTimeout(() => dismiss(id), kind === 'error' ? 7000 : 4000);
+      setToasts((list) => [...list.slice(-3), { id, kind, message, action }]);
+      // Toasts with a button stay longer, so there's time to use it.
+      window.setTimeout(() => dismiss(id), action ? 10_000 : kind === 'error' ? 7000 : 4000);
     },
     [dismiss],
   );
@@ -62,9 +70,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo<ToastApi>(
     () => ({
-      success: (m) => push('success', m),
+      success: (m, action) => push('success', m, action),
       error: (m) => push('error', m),
-      info: (m) => push('info', m),
+      info: (m, action) => push('info', m, action),
     }),
     [push],
   );
@@ -79,6 +87,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             {toast.kind === 'error' && <StatusGlyph tone="critical" size={17} />}
             {toast.kind === 'info' && <Info size={17} color="var(--accent-text)" aria-hidden />}
             <span>{toast.message}</span>
+            {toast.action && (
+              <button
+                type="button"
+                className="btn btn-sm toast-action"
+                onClick={() => {
+                  dismiss(toast.id);
+                  toast.action!.onClick();
+                }}
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button type="button" className="icon-btn icon-btn-sm" onClick={() => dismiss(toast.id)} aria-label="Dismiss">
               <X size={14} />
             </button>

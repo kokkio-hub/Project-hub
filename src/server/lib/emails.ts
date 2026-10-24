@@ -38,6 +38,8 @@ interface Layout {
   preheader: string;
   heading: string;
   paragraphs: string[];
+  /** A list of linked lines (notifications, tasks), with an optional heading per group. */
+  groups?: { title?: string; items: { text: string; url: string; meta?: string }[] }[];
   button?: { label: string; url: string };
   notes: string[];
 }
@@ -50,6 +52,24 @@ function render(layout: Layout): { html: string; text: string } {
     .join('\n');
   const notes = layout.notes
     .map((p) => `<p style="margin:0 0 6px;font-size:13px;line-height:1.5;color:#6f6e69;">${e(p)}</p>`)
+    .join('\n');
+
+  const groups = (layout.groups ?? [])
+    .filter((g) => g.items.length > 0)
+    .map((g) => {
+      const title = g.title
+        ? `<p style="margin:18px 0 8px;font-size:12px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#6f6e69;">${e(g.title)}</p>`
+        : '';
+      const rows = g.items
+        .map(
+          (item) => `<tr><td style="padding:9px 0;border-top:1px solid #eeede8;">
+              <a href="${e(item.url)}" target="_blank" style="font-size:14px;line-height:1.45;color:#0b0b0b;text-decoration:none;">${e(item.text)}</a>
+              ${item.meta ? `<div style="font-size:12px;color:#6f6e69;margin-top:2px;">${e(item.meta)}</div>` : ''}
+            </td></tr>`,
+        )
+        .join('');
+      return `${title}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 6px;">${rows}</table>`;
+    })
     .join('\n');
 
   const button = layout.button
@@ -90,6 +110,7 @@ function render(layout: Layout): { html: string; text: string } {
       <tr><td style="padding:18px 32px 4px;">
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;font-weight:700;color:#0b0b0b;">${e(layout.heading)}</h1>
         ${paragraphs}
+        ${groups}
       </td></tr>
       ${button}
       <tr><td style="padding:0 32px 28px;">
@@ -109,6 +130,13 @@ function render(layout: Layout): { html: string; text: string } {
     layout.heading,
     '',
     ...layout.paragraphs.flatMap((p) => [p, '']),
+    ...(layout.groups ?? [])
+      .filter((g) => g.items.length > 0)
+      .flatMap((g) => [
+        ...(g.title ? [g.title.toUpperCase(), ''] : []),
+        ...g.items.flatMap((item) => [`- ${item.text}${item.meta ? ` (${item.meta})` : ''}`, `  ${item.url}`]),
+        '',
+      ]),
     ...(layout.button ? [`${layout.button.label}:`, layout.button.url, ''] : []),
     ...layout.notes,
     '',
@@ -190,6 +218,51 @@ export function testEmail(appName: string): EmailContent {
         `This is a test message from ${appName}. If you're reading it, invitations and password reset emails will arrive too.`,
       ],
       notes: ['You received this because someone ran the send-test-email command on the server.'],
+    }),
+  };
+}
+
+export interface NotificationEmailItem {
+  text: string;
+  url: string;
+  meta?: string;
+}
+
+/**
+ * Notifications by email: a few at a time ("instant") or once a day with the
+ * day's due and overdue work ("daily").
+ */
+export function notificationsEmail(input: {
+  appName: string;
+  appUrl: string;
+  name: string;
+  mode: 'instant' | 'daily';
+  notifications: NotificationEmailItem[];
+  dueToday?: NotificationEmailItem[];
+  overdue?: NotificationEmailItem[];
+}): EmailContent {
+  const { appName, mode } = input;
+  const count = input.notifications.length;
+  const subject =
+    mode === 'daily'
+      ? `Your day in ${appName}`
+      : count === 1
+        ? input.notifications[0]!.text
+        : `${count} new notifications in ${appName}`;
+  return {
+    subject: oneLine(subject.length > 140 ? `${subject.slice(0, 139)}…` : subject),
+    ...render({
+      appName,
+      preheader: mode === 'daily' ? 'What needs your attention today.' : 'New activity on your tasks.',
+      heading: mode === 'daily' ? `Good morning, ${firstName(input.name)}` : 'New activity',
+      paragraphs: mode === 'daily' ? ["Here's what needs your attention today."] : [],
+      groups: [
+        { title: 'Overdue', items: input.overdue ?? [] },
+        { title: 'Due today', items: input.dueToday ?? [] },
+        { title: mode === 'daily' ? 'Since yesterday' : undefined, items: input.notifications },
+      ],
+      button: { label: `Open ${appName}`, url: input.appUrl },
+      notes: [`You get these emails ${mode === 'daily' ? 'once a day' : 'when something happens'}. Change this in your account settings.`],
     }),
   };
 }

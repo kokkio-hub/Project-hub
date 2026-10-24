@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Archive, Ellipsis, Link2, Pencil, Trash2, X } from 'lucide-react';
+import { Archive, Ellipsis, Eye, Link2, Pencil, Repeat, Trash2, X } from 'lucide-react';
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
-  TASK_STATUSES,
   TASK_STATUS_LABELS,
   type Comment,
+  type Project,
+  type Recurrence,
   type Task,
   type TaskPriority,
-  type TaskStatus,
+  type User,
 } from '../../../shared/types';
+import { describeRecurrence } from '../../../shared/recurrence';
 import { ApiError, errorMessage } from '../../api/client';
+import { undoDelete, useMarkRead, useNotifications } from '../../api/inbox';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useActivity,
   useAddComment,
@@ -25,7 +29,7 @@ import {
   useUsers,
   type TaskPatch,
 } from '../../api/queries';
-import { useCurrentUser } from '../../auth/session';
+import { canChangeWork, useCurrentUser } from '../../auth/session';
 import { Avatar } from '../../components/Avatar';
 import { DueChip } from '../../components/Bits';
 import { ErrorNotice, PageLoading, Spinner, useConfirm, useToast } from '../../components/Feedback';
@@ -36,6 +40,12 @@ import { Modal } from '../../components/Modal';
 import { formatDateTime, timeAgo } from '../../lib/format';
 import { useAutosize, useNow } from '../../lib/hooks';
 import { describeActivity } from '../activity/describe';
+import { nextCopyMessage } from '../board/KanbanBoard';
+import { LabelList, LabelPicker } from '../labels/Labels';
+import { Attachments } from './Attachments';
+import { Checklist } from './Checklist';
+import { Dependencies } from './Dependencies';
+import { MentionText, MentionTextarea } from './Mentions';
 
 export function TaskDrawer({ taskId, onClose }: { taskId: number | null; onClose: () => void }) {
   return (
@@ -50,6 +60,78 @@ function plausibleDate(value: string): boolean {
   return value === '' || (/^\d{4}-\d{2}-\d{2}$/.test(value) && Number(value.slice(0, 4)) >= 1900);
 }
 
+/** People who can be given a task in this project: team members who can see it. */
+export function assignableUsers(users: User[], project: Project | undefined): User[] {
+  return users.filter(
+    (u) =>
+      u.role !== 'guest' &&
+      (!project ||
+        project.visibility === 'team' ||
+        u.role === 'admin' ||
+        u.id === project.ownerId ||
+        project.memberIds.includes(u.id)),
+  );
+}
+
+/** People who can see the project, who can be @mentioned in its comments. */
+export function mentionableUsers(users: User[], project: Project | undefined): User[] {
+  return users.filter(
+    (u) =>
+      u.isActive &&
+      (!project ||
+        u.role === 'admin' ||
+        u.id === project.ownerId ||
+        project.memberIds.includes(u.id) ||
+        (project.visibility === 'team' && u.role !== 'guest')),
+  );
+}
+
+const REPEAT_OPTIONS: { label: string; value: Recurrence | null }[] = [
+  { label: 'Doesn’t repeat', value: null },
+  { label: 'Every day', value: { freq: 'daily', interval: 1 } },
+  { label: 'Every week', value: { freq: 'weekly', interval: 1 } },
+  { label: 'Every 2 weeks', value: { freq: 'weekly', interval: 2 } },
+  { label: 'Every month', value: { freq: 'monthly', interval: 1 } },
+  { label: 'Every 3 months', value: { freq: 'monthly', interval: 3 } },
+  { label: 'Every year', value: { freq: 'yearly', interval: 1 } },
+];
+
+const repeatKey = (r: Recurrence | null) => (r ? `${r.freq}:${r.interval}` : '');
+
+export function RepeatSelect({
+  value,
+  onChange,
+  disabled,
+  id,
+  className = 'select select-sm',
+}: {
+  value: Recurrence | null;
+  onChange: (value: Recurrence | null) => void;
+  disabled?: boolean;
+  id?: string;
+  className?: string;
+}) {
+  const options = REPEAT_OPTIONS.some((o) => repeatKey(o.value) === repeatKey(value))
+    ? REPEAT_OPTIONS
+    : [...REPEAT_OPTIONS, { label: describeRecurrence(value!), value }];
+  return (
+    <select
+      id={id}
+      className={className}
+      value={repeatKey(value)}
+      disabled={disabled}
+      aria-label="Repeats"
+      onChange={(e) => onChange(options.find((o) => repeatKey(o.value) === e.target.value)?.value ?? null)}
+    >
+      {options.map((o) => (
+        <option key={repeatKey(o.value)} value={repeatKey(o.value)}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function DrawerHeader({ children, onClose }: { children?: ReactNode; onClose: () => void }) {
   return (
     <div className="drawer-header">
@@ -62,16 +144,37 @@ function DrawerHeader({ children, onClose }: { children?: ReactNode; onClose: ()
   );
 }
 
+/** Opening a task marks its notifications as read. */
+function useReadOnOpen(taskId: number) {
+  const { data } = useNotifications();
+  const markRead = useMarkRead();
+  const unread = data?.notifications.some((n) => n.taskId === taskId && !n.readAt) ?? false;
+  const done = useRef(false);
+  useEffect(() => {
+    if (unread && !done.current) {
+      done.current = true;
+      markRead.mutate({ taskId });
+    }
+  }, [unread, taskId, markRead]);
+}
+
 function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void }) {
   const me = useCurrentUser();
-  const task = useTask(taskId);
-  const { data: projects } = useProjects(true);
+  // Set once this task is deleted from here. The drawer is closing by then; showing
+  // nothing keeps it from reloading the task and its sections, which are gone.
+  const [deleted, setDeleted] = useState(false);
+  const task = useTask(deleted ? null : taskId);
+  const { data: projects } = useProjects(true, 'include');
   const { users, byId } = useUsers();
   const update = useUpdateTask();
   const remove = useDeleteTask();
   const confirm = useConfirm();
   const toast = useToast();
+  const queryClient = useQueryClient();
+  useReadOnOpen(taskId);
+  const projectsById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p])), [projects]);
 
+  if (deleted) return null;
   if (task.isPending) {
     return (
       <>
@@ -86,20 +189,33 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
       <>
         <DrawerHeader onClose={onClose} />
         <div className="drawer-body">
-          <ErrorNotice error={gone ? new Error('This task no longer exists. It may have been deleted.') : task.error} />
+          <ErrorNotice error={gone ? new Error('This task no longer exists. It may have been deleted, or you don’t have access to it.') : task.error} />
         </div>
       </>
     );
   }
 
   const t = task.data;
-  const project = projects?.find((p) => p.id === t.projectId);
-  const readOnly = project?.status === 'archived';
-  const canDelete = me.role === 'admin' || t.createdBy === me.id || project?.ownerId === me.id;
+  const project = projectsById.get(t.projectId);
+  const archived = project?.status === 'archived';
+  const guest = !canChangeWork(me);
+  const readOnly = archived || guest;
+  const manager = me.role === 'admin' || (project?.ownerId ?? null) === me.id;
+  const canDelete = !guest && (manager || t.createdBy === me.id);
   const creator = t.createdBy ? byId.get(t.createdBy) : undefined;
+  const columns = [...(project?.columns ?? [])].sort((a, b) => a.position - b.position);
+  const column = columns.find((c) => c.id === t.columnId);
 
   const save = (patch: TaskPatch) =>
-    update.mutate({ id: t.id, patch }, { onError: (error) => toast.error(errorMessage(error)) });
+    update.mutate(
+      { id: t.id, patch },
+      {
+        onSuccess: (result) => {
+          if (result.next) toast.success(nextCopyMessage(result.next));
+        },
+        onError: (error) => toast.error(errorMessage(error)),
+      },
+    );
 
   const setStart = (value: string) => {
     if (!plausibleDate(value)) return;
@@ -129,18 +245,26 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
   const deleteTask = async () => {
     const ok = await confirm({
       title: 'Delete this task?',
-      message: `“${t.title}” and its comments will be permanently deleted.`,
+      message: `“${t.title}” moves to the trash. You can restore it from there for 30 days.`,
       confirmLabel: 'Delete task',
       danger: true,
     });
     if (!ok) return;
-    remove.mutate(t.id, {
-      onSuccess: () => {
-        toast.success('Task deleted');
-        onClose();
-      },
-      onError: (error) => toast.error(errorMessage(error)),
-    });
+    const item = { kind: 'task' as const, id: t.id };
+    setDeleted(true);
+    onClose();
+    remove.mutateAsync(t.id).then(
+      () =>
+        toast.success('Task moved to the trash', {
+          label: 'Undo',
+          onClick: () =>
+            void undoDelete(queryClient, item).then(
+              () => toast.success('Task restored'),
+              (error) => toast.error(errorMessage(error)),
+            ),
+        }),
+      (error) => toast.error(errorMessage(error)),
+    );
   };
 
   return (
@@ -159,7 +283,7 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
         <button type="button" className="icon-btn" onClick={copyLink} aria-label="Copy link to task" title="Copy link">
           <Link2 size={17} />
         </button>
-        {canDelete && !readOnly && (
+        {canDelete && !archived && (
           <Menu
             trigger={(props) => (
               <button type="button" className="icon-btn" aria-label="More actions" {...props}>
@@ -175,32 +299,42 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
       </DrawerHeader>
 
       <div className="drawer-body">
-        {readOnly && (
+        {archived && (
           <div className="alert alert-info" style={{ marginBottom: 14 }}>
             <Archive size={16} aria-hidden />
             This project is archived, so its tasks are read-only.
+          </div>
+        )}
+        {guest && !archived && (
+          <div className="alert alert-info" style={{ marginBottom: 14 }}>
+            <Eye size={16} aria-hidden />
+            You’re a guest here: you can read everything and leave comments.
           </div>
         )}
 
         <TitleEditor task={t} readOnly={readOnly} onSave={(title) => save({ title })} />
 
         <dl className="props">
-          <dt>Status</dt>
+          <dt>Column</dt>
           <dd>
             <StatusIcon status={t.status} />
-            <select
-              className="select select-sm"
-              value={t.status}
-              disabled={readOnly}
-              aria-label="Status"
-              onChange={(e) => save({ status: e.target.value as TaskStatus })}
-            >
-              {TASK_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {TASK_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+            {readOnly ? (
+              <span>{column?.name ?? TASK_STATUS_LABELS[t.status]}</span>
+            ) : (
+              <select
+                className="select select-sm"
+                value={t.columnId ?? ''}
+                aria-label="Column"
+                onChange={(e) => save({ columnId: Number(e.target.value) })}
+              >
+                {columns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.name.toLowerCase() !== TASK_STATUS_LABELS[c.stage].toLowerCase() ? ` (${TASK_STATUS_LABELS[c.stage]})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </dd>
 
           <dt>Priority</dt>
@@ -225,7 +359,7 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
           <dd>
             <Avatar user={t.assigneeId ? byId.get(t.assigneeId) : null} size="sm" />
             <UserSelect
-              users={users}
+              users={assignableUsers(users, project)}
               value={t.assigneeId}
               onChange={(assigneeId) => save({ assigneeId })}
               className="select select-sm"
@@ -259,6 +393,21 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
             <DueChip dueDate={t.dueDate} status={t.status} showIcon />
           </dd>
 
+          <dt>Repeats</dt>
+          <dd>
+            <Repeat size={14} className="secondary" aria-hidden />
+            <RepeatSelect value={t.recurrence} onChange={(recurrence) => save({ recurrence })} disabled={readOnly} />
+          </dd>
+
+          <dt>Labels</dt>
+          <dd className="labels-prop">
+            <LabelList ids={t.labelIds} labels={project?.labels ?? []} size="md" />
+            {!readOnly && project && (
+              <LabelPicker projectId={project.id} labels={project.labels} value={t.labelIds} onChange={(labelIds) => save({ labelIds })} />
+            )}
+            {readOnly && t.labelIds.length === 0 && <span className="muted">None</span>}
+          </dd>
+
           <dt>Project</dt>
           <dd>
             <select
@@ -269,7 +418,7 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
               onChange={(e) => save({ projectId: Number(e.target.value) })}
             >
               {(projects ?? [])
-                .filter((p) => p.status !== 'archived' || p.id === t.projectId)
+                .filter((p) => (p.status !== 'archived' && p.isTemplate === project?.isTemplate) || p.id === t.projectId)
                 .map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -281,7 +430,18 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
 
         <DescriptionEditor task={t} readOnly={readOnly} onSave={(description) => save({ description })} />
 
-        <Comments taskId={t.id} readOnly={readOnly} />
+        <Checklist taskId={t.id} readOnly={readOnly} />
+
+        <Dependencies task={t} projectsById={projectsById} readOnly={readOnly} />
+
+        <Attachments
+          taskId={t.id}
+          readOnly={readOnly}
+          usersById={byId}
+          canDelete={(a) => !guest && (a.userId === me.id || manager)}
+        />
+
+        <Comments taskId={t.id} readOnly={archived} people={mentionableUsers(users, project)} />
 
         <History taskId={t.id} />
 
@@ -298,15 +458,15 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
 function TitleEditor({ task, readOnly, onSave }: { task: Task; readOnly: boolean; onSave: (title: string) => void }) {
   const [value, setValue] = useState(task.title);
   const ref = useAutosize(value);
-  const latest = useRef({ value, saved: task.title, onSave });
-  latest.current = { value, saved: task.title, onSave };
+  const latest = useRef({ value, saved: task.title, onSave, readOnly });
+  latest.current = { value, saved: task.title, onSave, readOnly };
   useEffect(() => setValue(task.title), [task.title]);
 
   // Save an unsaved edit if the drawer closes while typing (e.g. with Escape).
   useEffect(
     () => () => {
-      const { value: v, saved, onSave: save } = latest.current;
-      if (v.trim() && v.trim() !== saved) save(v.trim());
+      const { value: v, saved, onSave: save, readOnly: ro } = latest.current;
+      if (!ro && v.trim() && v.trim() !== saved) save(v.trim());
     },
     [],
   );
@@ -351,8 +511,8 @@ function DescriptionEditor({
   const [value, setValue] = useState(task.description);
   const [focused, setFocused] = useState(false);
   const ref = useAutosize(value);
-  const latest = useRef({ value, saved: task.description, onSave });
-  latest.current = { value, saved: task.description, onSave };
+  const latest = useRef({ value, saved: task.description, onSave, readOnly });
+  latest.current = { value, saved: task.description, onSave, readOnly };
 
   useEffect(() => {
     if (!focused) setValue(task.description);
@@ -361,11 +521,13 @@ function DescriptionEditor({
   // Save unsaved edits if the drawer closes while typing.
   useEffect(
     () => () => {
-      const { value: v, saved, onSave: save } = latest.current;
-      if (v !== saved) save(v);
+      const { value: v, saved, onSave: save, readOnly: ro } = latest.current;
+      if (!ro && v !== saved) save(v);
     },
     [],
   );
+
+  if (readOnly && !task.description) return null;
 
   return (
     <section className="drawer-section">
@@ -389,9 +551,9 @@ function DescriptionEditor({
   );
 }
 
-function Comments({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
+function Comments({ taskId, readOnly, people }: { taskId: number; readOnly: boolean; people: User[] }) {
   const me = useCurrentUser();
-  const { byId } = useUsers();
+  const { byId, users } = useUsers();
   const { data: comments, isPending } = useComments(taskId);
   const add = useAddComment(taskId);
   const [draft, setDraft] = useState('');
@@ -422,6 +584,7 @@ function Comments({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
               key={comment.id}
               comment={comment}
               taskId={taskId}
+              people={people.length ? people : users}
               author={comment.userId ? byId.get(comment.userId) : undefined}
               canEdit={comment.userId === me.id && !readOnly}
               canDelete={(comment.userId === me.id || me.role === 'admin') && !readOnly}
@@ -433,14 +596,15 @@ function Comments({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
         <div className="comment-composer">
           <Avatar user={me} size="sm" />
           <div className="stack" style={{ gap: 8, flex: 1 }}>
-            <textarea
-              ref={ref}
+            <MentionTextarea
+              textareaRef={ref}
               className="textarea"
               rows={2}
               value={draft}
-              placeholder="Write a comment…"
+              people={people.filter((p) => p.id !== me.id)}
+              placeholder="Write a comment… Type @ to mention someone."
               aria-label="New comment"
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -469,13 +633,15 @@ function Comments({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
 function CommentItem({
   comment,
   taskId,
+  people,
   author,
   canEdit,
   canDelete,
 }: {
   comment: Comment;
   taskId: number;
-  author: ReturnType<typeof useUsers>['users'][number] | undefined;
+  people: User[];
+  author: User | undefined;
   canEdit: boolean;
   canDelete: boolean;
 }) {
@@ -512,6 +678,7 @@ function CommentItem({
       <div className="comment-main">
         <div className="comment-head">
           <strong>{author?.name ?? 'Former member'}</strong>
+          {author?.role === 'guest' && <span className="badge">Guest</span>}
           <span className="muted" title={formatDateTime(comment.createdAt)}>
             {timeAgo(comment.createdAt)}
             {comment.updatedAt !== comment.createdAt && ' · edited'}
@@ -530,10 +697,11 @@ function CommentItem({
         </div>
         {editing ? (
           <div className="stack" style={{ gap: 8 }}>
-            <textarea
+            <MentionTextarea
               className="textarea"
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              people={people}
+              onChange={setValue}
               autoFocus
               aria-label="Edit comment"
               onKeyDown={(e) => {
@@ -563,7 +731,9 @@ function CommentItem({
             </div>
           </div>
         ) : (
-          <p className="comment-body">{comment.body}</p>
+          <p className="comment-body">
+            <MentionText text={comment.body} people={people} />
+          </p>
         )}
       </div>
     </li>

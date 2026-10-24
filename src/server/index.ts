@@ -6,6 +6,7 @@ import { createMailer } from './lib/mailer.js';
 import { purgeExpiredSessions } from './auth/sessions.js';
 import { purgeExpiredTokens } from './auth/tokens.js';
 import { countUsers } from './repos/users.js';
+import { Scheduler } from './services/scheduler.js';
 
 loadEnvFile();
 const config = loadConfig();
@@ -21,6 +22,8 @@ setInterval(purge, 60 * 60 * 1000).unref();
 
 const mailer = createMailer(config);
 const { app, ctx } = createApp({ db, config, mailer });
+const scheduler = new Scheduler(ctx);
+if (config.scheduler) scheduler.start();
 
 const server = app.listen(config.port, config.host, () => {
   const shownHost = config.host === '0.0.0.0' || config.host === '::' ? 'localhost' : config.host;
@@ -30,6 +33,11 @@ const server = app.listen(config.port, config.host, () => {
     console.log('No accounts yet: open the app in your browser now to create the admin account.');
   }
   checkEmail();
+  console.log(
+    ctx.backups.client
+      ? `Backups: every night after ${String(config.backupHourUtc).padStart(2, '0')}:00 UTC to ${ctx.backups.client.description}.`
+      : 'Backups: no backup bucket set up (optional; see "Backups" in the README).',
+  );
 });
 
 /** Reports at startup whether email will work, so a wrong password shows up in the logs right away. */
@@ -55,6 +63,7 @@ function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`${signal} received, shutting down...`);
+  scheduler.stop();
   ctx.events.closeAll();
   server.close(() => {
     // Let emails that are still being sent finish first.

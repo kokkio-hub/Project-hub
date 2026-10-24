@@ -2,6 +2,9 @@ import type { DB } from './db/index.js';
 import { hashPassword } from './auth/password.js';
 import { issueToken } from './auth/tokens.js';
 import { logActivity } from './repos/activity.js';
+import { insertChecklistItem } from './repos/checklist.js';
+import { addDependency } from './repos/dependencies.js';
+import { insertLabel, setTaskLabels } from './repos/labels.js';
 import { insertProject } from './repos/projects.js';
 import { insertUser } from './repos/users.js';
 import { addDays, localToday } from '../shared/dates.js';
@@ -269,9 +272,11 @@ export async function seedDemo(db: DB): Promise<{ users: number; invitations: nu
     );
 
     const insertTask = db.prepare(
-      `INSERT INTO tasks (project_id, title, description, status, priority, assignee_id, start_date, due_date,
+      `INSERT INTO tasks (project_id, column_id, title, description, status, priority, assignee_id, start_date, due_date,
                           position, created_by, created_at, updated_at, completed_at)
-       VALUES (@projectId, @title, @description, @status, @priority, @assigneeId, @startDate, @dueDate,
+       VALUES (@projectId,
+               (SELECT id FROM project_columns WHERE project_id = @projectId AND stage = @status ORDER BY position LIMIT 1),
+               @title, @description, @status, @priority, @assigneeId, @startDate, @dueDate,
                @position, @createdBy, @createdAt, @updatedAt, @completedAt)`,
     );
     const insertComment = db.prepare(
@@ -355,7 +360,123 @@ export async function seedDemo(db: DB): Promise<{ users: number; invitations: nu
         }
       });
     }
+    addExtras(db, ids, today);
   });
   run();
-  return { users: PEOPLE.length, invitations: 1, projects: PROJECTS.length, tasks: taskCount };
+  return { users: PEOPLE.length, invitations: 1, projects: PROJECTS.length + 1, tasks: taskCount };
+}
+
+/** Labels, checklists, dependencies, a repeating task and a template, so every feature has something to show. */
+function addExtras(db: DB, ids: Record<PersonKey, number>, today: string) {
+  const projectId = (name: string) => (db.prepare('SELECT id FROM projects WHERE name = ?').get(name) as { id: number }).id;
+  const taskId = (title: string) => (db.prepare('SELECT id FROM tasks WHERE title = ?').get(title) as { id: number } | undefined)?.id;
+
+  const web = projectId('Website redesign');
+  const design = insertLabel(db, web, 'Design', 'violet').id;
+  const content = insertLabel(db, web, 'Content', 'orange').id;
+  const dev = insertLabel(db, web, 'Development', 'aqua').id;
+  const labelled: [string, number[]][] = [
+    ['Moodboard and visual direction', [design]],
+    ['Homepage wireframes', [design]],
+    ['Design system: colours, type and components', [design, dev]],
+    ['Build page templates', [dev]],
+    ['Rewrite product page copy', [content]],
+    ['Set up redirects from old URLs', [dev]],
+    ['Accessibility review', [design, dev]],
+    ['Performance budget and image optimisation', [dev]],
+  ];
+  for (const [title, labels] of labelled) {
+    const id = taskId(title);
+    if (id) setTaskLabels(db, id, labels);
+  }
+
+  const checklists: [string, [string, boolean][]][] = [
+    [
+      'Build page templates',
+      [
+        ['Home', true],
+        ['Product', true],
+        ['Pricing', false],
+        ['Blog index and article', false],
+        ['Contact', false],
+      ],
+    ],
+    [
+      'Launch checklist and go-live',
+      [
+        ['Freeze content', false],
+        ['Check every redirect', false],
+        ['Switch DNS', false],
+        ['Announce the new site', false],
+      ],
+    ],
+  ];
+  for (const [title, items] of checklists) {
+    const id = taskId(title);
+    if (!id) continue;
+    for (const [body, done] of items) insertChecklistItem(db, id, body, ids.priya, done);
+  }
+
+  const deps: [string, string][] = [
+    ['Build page templates', 'Accessibility review'],
+    ['Accessibility review', 'Launch checklist and go-live'],
+    ['Set up redirects from old URLs', 'Launch checklist and go-live'],
+  ];
+  for (const [blocker, blocked] of deps) {
+    const a = taskId(blocker);
+    const b = taskId(blocked);
+    if (a && b) addDependency(db, a, b, ids.liam);
+  }
+
+  // A weekly task: finishing it creates next week's.
+  db.prepare(
+      `INSERT INTO tasks (project_id, column_id, title, description, status, priority, assignee_id, due_date, position,
+                          created_by, created_at, updated_at, recurrence, recurrence_interval)
+       VALUES (@projectId, (SELECT id FROM project_columns WHERE project_id = @projectId AND stage = 'todo' ORDER BY position LIMIT 1),
+               'Weekly status update', 'Send the team a short update: done, next, blocked.', 'todo', 'medium', @assignee, @due,
+               99, @assignee, @now, @now, 'weekly', 1)`,
+  ).run({ projectId: web, assignee: ids.liam, due: addDays(today, 2), now: new Date().toISOString() });
+
+  // A template to start new projects from.
+  const template = insertProject(db, {
+    name: 'Client website (template)',
+    description: 'Our standard plan for a small business website: kick-off, design, build and launch.',
+    color: 'blue',
+    status: 'active',
+    isTemplate: true,
+    startDate: today,
+    dueDate: addDays(today, 34),
+    ownerId: ids.sanne,
+    createdBy: ids.sanne,
+  });
+  const steps: [string, number, number][] = [
+    ['Kick-off call with the client', 0, 0],
+    ['Collect logo, photos and copy', 1, 7],
+    ['Sitemap and wireframes', 5, 12],
+    ['Visual design', 12, 19],
+    ['Build the site', 19, 30],
+    ['Client review and changes', 28, 32],
+    ['Launch and hand-over', 33, 34],
+  ];
+  const insert = db.prepare(
+    `INSERT INTO tasks (project_id, column_id, title, status, priority, start_date, due_date, position, created_by, created_at, updated_at)
+     VALUES (@projectId, (SELECT id FROM project_columns WHERE project_id = @projectId AND stage = 'todo' ORDER BY position LIMIT 1),
+             @title, 'todo', 'medium', @start, @due, @position, @createdBy, @now, @now)`,
+  );
+  let previous: number | null = null;
+  steps.forEach(([title, start, due], position) => {
+    const id = Number(
+      insert.run({
+        projectId: template,
+        title,
+        start: start === due ? null : addDays(today, start),
+        due: addDays(today, due),
+        position,
+        createdBy: ids.sanne,
+        now: new Date().toISOString(),
+      }).lastInsertRowid,
+    );
+    if (previous) addDependency(db, previous, id, ids.sanne);
+    previous = id;
+  });
 }

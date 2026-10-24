@@ -8,6 +8,7 @@ import { Avatar } from '../components/Avatar';
 import { ErrorNotice, Spinner, useToast } from '../components/Feedback';
 import { ColorPicker, Field } from '../components/Form';
 import { useTheme, type ThemePreference } from '../lib/theme';
+import { CalendarSettings, DevicesSettings, NotificationSettings, TwoFactorSettings } from '../features/account/AccountSections';
 import { ChangePasswordForm } from './AuthPages';
 
 export function AccountPage() {
@@ -75,6 +76,14 @@ export function AccountPage() {
             <ChangePasswordForm onDone={() => toast.success('Password updated. Other sessions were signed out.')} />
           </div>
         </section>
+
+        <TwoFactorSettings />
+
+        <DevicesSettings />
+
+        <NotificationSettings />
+
+        <CalendarSettings />
 
         <section className="card">
           <div className="card-header">

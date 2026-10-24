@@ -24,6 +24,9 @@ export function onAuthFailure(listener: Listener | null): void {
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
+  /** A file to send as the raw request body (uploads). */
+  file?: Blob;
+  headers?: Record<string, string>;
   signal?: AbortSignal;
 }
 
@@ -39,8 +42,12 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     'X-Client-Date': localToday(),
     'X-Client-Tz-Offset': String(-new Date().getTimezoneOffset()),
   };
-  let body: string | undefined;
-  if (options.body !== undefined) {
+  Object.assign(headers, options.headers);
+  let body: string | Blob | undefined;
+  if (options.file) {
+    headers['Content-Type'] = 'application/octet-stream';
+    body = options.file;
+  } else if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(options.body);
   }

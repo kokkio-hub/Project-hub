@@ -162,6 +162,13 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
           <span>
             <StatusGlyph tone="critical" size={12} /> Overdue
           </span>
+          <span>
+            <svg width="22" height="10" aria-hidden className="legend-arrow">
+              <path d="M1 5 H17" />
+              <path d="M15 2 L19 5 L15 8" />
+            </svg>
+            Waits for
+          </span>
         </div>
       </div>
 
@@ -201,6 +208,16 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
               ))}
               <div className="grid-today" style={{ left: todayX }} title={`Today, ${formatDate(today)}`} />
             </div>
+
+            <DependencyArrows
+              groups={groups}
+              showGroups={showGroups}
+              collapsed={collapsed}
+              rangeStart={range.start}
+              ppd={ppd}
+              left={labelWidth}
+              width={trackWidth}
+            />
 
             {groups.map(({ project, tasks }) => {
               const isCollapsed = collapsed.has(project.id);
@@ -250,6 +267,89 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
 
       {hover && <TimelineTooltip info={hover} assignee={hover.task.assigneeId ? usersById.get(hover.task.assigneeId) : undefined} today={today} />}
     </div>
+  );
+}
+
+const GROUP_ROW = 40;
+const TASK_ROW = 36;
+
+/**
+ * Arrows from each task to the tasks that wait for it. Red when the waiting
+ * task is planned to start before the one it waits for ends.
+ */
+function DependencyArrows({
+  groups,
+  showGroups,
+  collapsed,
+  rangeStart,
+  ppd,
+  left,
+  width,
+}: {
+  groups: TimelineGroup[];
+  showGroups: boolean;
+  collapsed: Set<number>;
+  rangeStart: string;
+  ppd: number;
+  left: number;
+  width: number;
+}) {
+  const { paths, height } = useMemo(() => {
+    const rows = new Map<number, { y: number; start: number; end: number; task: Task }>();
+    let y = 0;
+    for (const { project, tasks } of groups) {
+      if (showGroups) y += GROUP_ROW;
+      if (collapsed.has(project.id)) continue;
+      const sorted = sortForTimeline(tasks);
+      if (showGroups && sorted.length === 0) y += TASK_ROW;
+      for (const task of sorted) {
+        const span = taskSpan(task);
+        if (span) {
+          const startX = diffDays(span.start, rangeStart) * ppd;
+          const endX = span.milestone ? startX + ppd / 2 + 8 : (diffDays(span.end, span.start) + 1) * ppd + startX;
+          rows.set(task.id, { y: y + TASK_ROW / 2, start: span.milestone ? startX + ppd / 2 - 8 : startX, end: endX, task });
+        }
+        y += TASK_ROW;
+      }
+    }
+    const out: { d: string; late: boolean; key: string }[] = [];
+    for (const to of rows.values()) {
+      for (const blockerId of to.task.blockedByIds) {
+        const from = rows.get(blockerId);
+        if (!from) continue;
+        const late =
+          from.task.status !== 'done' &&
+          !!from.task.dueDate &&
+          !!(to.task.startDate ?? to.task.dueDate) &&
+          (to.task.startDate ?? to.task.dueDate)! <= from.task.dueDate!;
+        const x1 = from.end + 2;
+        const x2 = to.start - 3;
+        const bend = Math.max(x1 + 8, Math.min(x2 - 8, x1 + 14));
+        const d =
+          x2 > x1 + 16
+            ? `M${x1} ${from.y} H${bend} V${to.y} H${x2}`
+            : `M${x1} ${from.y} H${x1 + 8} V${(from.y + to.y) / 2} H${x2 - 10} V${to.y} H${x2}`;
+        out.push({ d, late, key: `${blockerId}-${to.task.id}` });
+      }
+    }
+    return { paths: out, height: y };
+  }, [groups, showGroups, collapsed, rangeStart, ppd]);
+
+  if (paths.length === 0) return null;
+  return (
+    <svg className="tl-deps" style={{ left, width, height }} width={width} height={height} aria-hidden>
+      <defs>
+        <marker id="tl-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L8 4 L0 8 Z" className="tl-arrow-head" />
+        </marker>
+        <marker id="tl-arrow-late" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L8 4 L0 8 Z" className="tl-arrow-head is-late" />
+        </marker>
+      </defs>
+      {paths.map((p) => (
+        <path key={p.key} d={p.d} className={`tl-dep ${p.late ? 'is-late' : ''}`} markerEnd={`url(#${p.late ? 'tl-arrow-late' : 'tl-arrow'})`} />
+      ))}
+    </svg>
   );
 }
 

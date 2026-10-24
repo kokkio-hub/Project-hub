@@ -10,11 +10,16 @@ import type {
   InviteMethod,
   InviteResponse,
   LinkInfo,
+  Me,
+  NotifyEmailMode,
   Project,
   ProjectStatus,
+  ProjectVisibility,
+  Recurrence,
   Task,
   TaskPriority,
   TaskStatus,
+  TwoFactorChallenge,
   User,
   UserRole,
 } from '../../shared/types';
@@ -37,11 +42,13 @@ export interface ActivityQuery {
   limit?: number;
 }
 
+export type TemplateMode = 'exclude' | 'only' | 'include';
+
 export const qk = {
   status: ['status'] as const,
   me: ['me'] as const,
   users: ['users'] as const,
-  projects: (includeArchived: boolean) => ['projects', { includeArchived }] as const,
+  projects: (includeArchived: boolean, templates: TemplateMode = 'exclude') => ['projects', { includeArchived, templates }] as const,
   project: (id: number) => ['project', id] as const,
   tasks: (query: TaskQuery) => ['tasks', query] as const,
   task: (id: number) => ['task', id] as const,
@@ -49,6 +56,14 @@ export const qk = {
   dashboard: ['dashboard'] as const,
   activity: (query: ActivityQuery) => ['activity', query] as const,
   link: (kind: LinkKind, token: string) => ['link', kind, token] as const,
+  checklist: (taskId: number) => ['checklist', taskId] as const,
+  attachments: (taskId: number) => ['attachments', taskId] as const,
+  dependencies: (taskId: number) => ['dependencies', taskId] as const,
+  notifications: ['notifications'] as const,
+  search: (q: string) => ['search', q] as const,
+  trash: ['trash'] as const,
+  sessions: ['sessions'] as const,
+  adminStatus: ['admin-status'] as const,
 };
 
 function toQueryString(params: Record<string, string | number | boolean | undefined>): string {
@@ -62,7 +77,7 @@ function toQueryString(params: Record<string, string | number | boolean | undefi
 
 /** Refreshes everything derived from tasks and projects after a change. */
 export function invalidateWork(qc: QueryClient): void {
-  for (const key of ['tasks', 'task', 'projects', 'project', 'dashboard', 'activity']) {
+  for (const key of ['tasks', 'task', 'projects', 'project', 'dashboard', 'activity', 'dependencies', 'trash', 'search']) {
     void qc.invalidateQueries({ queryKey: [key] });
   }
 }
@@ -88,9 +103,9 @@ export function useAppStatus() {
 export function useMe() {
   return useQuery({
     queryKey: qk.me,
-    queryFn: async (): Promise<User | null> => {
+    queryFn: async (): Promise<Me | null> => {
       try {
-        return (await api<{ user: User }>('/auth/me')).user;
+        return (await api<{ user: Me }>('/auth/me')).user;
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) return null;
         throw error;
@@ -104,16 +119,30 @@ export function useMe() {
 const SESSIONLESS_KEYS = new Set<unknown>(['status', 'me', 'link']);
 
 /** Clears cached data when someone signs in or out, so one person never sees another's cache. */
-export function resetSessionData(qc: QueryClient, user: User | null): void {
+export function resetSessionData(qc: QueryClient, user: Me | null): void {
   qc.removeQueries({ predicate: (q) => !SESSIONLESS_KEYS.has(q.queryKey[0]) });
   qc.setQueryData(qk.me, user);
 }
 
+/** Signing in answers with the person, or with a challenge when a two-factor code is still needed. */
+export type SignInResult = { user: Me } | TwoFactorChallenge;
+
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { email: string; password: string }) =>
-      api<{ user: User }>('/auth/login', { method: 'POST', body: input }).then((r) => r.user),
+    mutationFn: (input: { email: string; password: string }) => api<SignInResult>('/auth/login', { method: 'POST', body: input }),
+    onSuccess: (result) => {
+      if ('user' in result) resetSessionData(qc, result.user);
+    },
+  });
+}
+
+/** The second sign-in step: a code from the authenticator app or a recovery code. */
+export function useVerifyLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { challenge: string; code: string }) =>
+      api<{ user: Me }>('/auth/login/verify', { method: 'POST', body: input }).then((r) => r.user),
     onSuccess: (user) => resetSessionData(qc, user),
   });
 }
@@ -122,7 +151,7 @@ export function useSetup() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { name: string; email: string; password: string }) =>
-      api<{ user: User }>('/auth/setup', { method: 'POST', body: input }).then((r) => r.user),
+      api<{ user: Me }>('/auth/setup', { method: 'POST', body: input }).then((r) => r.user),
     onSuccess: (user) => {
       qc.setQueryData<AppStatus>(qk.status, (old) => (old ? { ...old, setupRequired: false } : old));
       resetSessionData(qc, user);
@@ -142,7 +171,7 @@ export function useChangePassword() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { currentPassword: string; newPassword: string }) =>
-      api<{ user: User }>('/auth/password', { method: 'POST', body: input }).then((r) => r.user),
+      api<{ user: Me }>('/auth/password', { method: 'POST', body: input }).then((r) => r.user),
     onSuccess: (user) => qc.setQueryData(qk.me, user),
   });
 }
@@ -150,8 +179,8 @@ export function useChangePassword() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name?: string; title?: string; color?: ColorName }) =>
-      api<{ user: User }>('/auth/me', { method: 'PATCH', body: input }).then((r) => r.user),
+    mutationFn: (input: { name?: string; title?: string; color?: ColorName; notifyEmail?: NotifyEmailMode }) =>
+      api<{ user: Me }>('/auth/me', { method: 'PATCH', body: input }).then((r) => r.user),
     onSuccess: (user) => {
       qc.setQueryData(qk.me, user);
       void qc.invalidateQueries({ queryKey: qk.users });
@@ -183,7 +212,7 @@ export function useAcceptInvite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { token: string; name: string; password: string }) =>
-      api<{ user: User }>('/auth/invitation/accept', { method: 'POST', body: input }).then((r) => r.user),
+      api<{ user: Me }>('/auth/invitation/accept', { method: 'POST', body: input }).then((r) => r.user),
     onSuccess: (user) => resetSessionData(qc, user),
   });
 }
@@ -195,13 +224,15 @@ export function useRequestPasswordReset() {
   });
 }
 
-/** Sets a new password from a reset link, then signs in. */
+/** Sets a new password from a reset link, then signs in (or asks for a two-factor code first). */
 export function useCompletePasswordReset() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { token: string; password: string }) =>
-      api<{ user: User }>('/auth/password-reset/complete', { method: 'POST', body: input }).then((r) => r.user),
-    onSuccess: (user) => resetSessionData(qc, user),
+      api<SignInResult>('/auth/password-reset/complete', { method: 'POST', body: input }),
+    onSuccess: (result) => {
+      if ('user' in result) resetSessionData(qc, result.user);
+    },
   });
 }
 
@@ -296,10 +327,13 @@ export function useResetPassword() {
 // Projects
 // ---------------------------------------------------------------------------
 
-export function useProjects(includeArchived = false) {
+export function useProjects(includeArchived = false, templates: TemplateMode = 'exclude') {
   return useQuery({
-    queryKey: qk.projects(includeArchived),
-    queryFn: () => api<{ projects: Project[] }>(`/projects${toQueryString({ includeArchived })}`).then((r) => r.projects),
+    queryKey: qk.projects(includeArchived, templates),
+    queryFn: () =>
+      api<{ projects: Project[] }>(
+        `/projects${toQueryString({ includeArchived, templates: templates === 'exclude' ? undefined : templates })}`,
+      ).then((r) => r.projects),
   });
 }
 
@@ -316,9 +350,15 @@ export interface ProjectInput {
   description: string;
   color?: ColorName;
   status: ProjectStatus;
+  visibility?: ProjectVisibility;
   startDate: string | null;
   dueDate: string | null;
   ownerId: number | null;
+  memberIds?: number[];
+  /** Start the new project from a template. */
+  fromTemplateId?: number;
+  keepAssignees?: boolean;
+  isTemplate?: boolean;
 }
 
 export function useCreateProject() {
@@ -379,10 +419,13 @@ export interface TaskInput {
   title: string;
   description?: string;
   status?: TaskStatus;
+  columnId?: number;
   priority?: TaskPriority;
   assigneeId?: number | null;
   startDate?: string | null;
   dueDate?: string | null;
+  labelIds?: number[];
+  recurrence?: Recurrence | null;
 }
 
 export type TaskPatch = Partial<Omit<TaskInput, 'projectId'>> & { projectId?: number };
@@ -395,16 +438,22 @@ export function useCreateTask() {
   });
 }
 
+/** The saved task, and the next copy when finishing a repeating task created one. */
+export interface TaskSaveResult {
+  task: Task;
+  next?: Task;
+}
+
 export function useUpdateTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: TaskPatch }) =>
-      api<{ task: Task }>(`/tasks/${id}`, { method: 'PATCH', body: patch }).then((r) => r.task),
+    mutationFn: ({ id, patch }: { id: number; patch: TaskPatch }) => api<TaskSaveResult>(`/tasks/${id}`, { method: 'PATCH', body: patch }),
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ['tasks'] });
-      patchTaskCaches(qc, id, patch as Partial<Task>);
+      const { labelIds, recurrence, ...simple } = patch;
+      patchTaskCaches(qc, id, { ...simple, ...(labelIds ? { labelIds } : {}), ...(recurrence !== undefined ? { recurrence } : {}) } as Partial<Task>);
     },
-    onSuccess: (task) => patchTaskCaches(qc, task.id, task),
+    onSuccess: (result) => patchTaskCaches(qc, result.task.id, result.task),
     onError: () => invalidateWork(qc),
     onSettled: () => invalidateWork(qc),
   });
@@ -413,8 +462,8 @@ export function useUpdateTask() {
 export function useMoveTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status, afterId }: { id: number; status: TaskStatus; afterId: number | null }) =>
-      api<{ task: Task }>(`/tasks/${id}/move`, { method: 'POST', body: { status, afterId } }).then((r) => r.task),
+    mutationFn: ({ id, columnId, afterId }: { id: number; columnId: number; afterId: number | null }) =>
+      api<TaskSaveResult>(`/tasks/${id}/move`, { method: 'POST', body: { columnId, afterId } }),
     onSettled: () => invalidateWork(qc),
   });
 }
@@ -425,7 +474,9 @@ export function useDeleteTask() {
     mutationFn: (id: number) => api<void>(`/tasks/${id}`, { method: 'DELETE' }),
     onSuccess: (_data, id) => {
       removeTaskFromCaches(qc, id);
-      qc.removeQueries({ queryKey: qk.task(id) });
+      for (const key of [qk.task(id), qk.checklist(id), qk.attachments(id), qk.dependencies(id), qk.comments(id)]) {
+        qc.removeQueries({ queryKey: key });
+      }
       invalidateWork(qc);
     },
   });

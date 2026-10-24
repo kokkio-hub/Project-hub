@@ -1,17 +1,28 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { nowIso } from '../db/index.js';
 import { badRequest, conflict, forbidden, HttpError } from '../lib/errors.js';
+import qrcode from 'qrcode-generator';
 import { parse, zColor, zEmail, zName, zPassword, zTitle } from '../lib/validation.js';
-import { countUsers, getUserByEmail, getUserById, insertUser, isPending, toUser, updateUser } from '../repos/users.js';
-import type { AppStatus, LinkInfo } from '../../shared/types.js';
-import { clearSessionCookie, requireSession, setSessionCookie } from '../auth/middleware.js';
+import { countUsers, getUserByEmail, getUserById, insertUser, isPending, toMe, updateUser, type UserRow } from '../repos/users.js';
+import { NOTIFY_EMAIL_MODES, type AppStatus, type LinkInfo, type SessionInfo, type TwoFactorChallenge } from '../../shared/types.js';
+import { clearSessionCookie, requireAuth, requireSession, setSessionCookie } from '../auth/middleware.js';
 import { fakeVerify, hashPassword, verifyPassword } from '../auth/password.js';
-import { createSession, deleteSessionByToken, deleteUserSessions, SESSION_COOKIE } from '../auth/sessions.js';
+import {
+  createSession,
+  deleteSessionByToken,
+  deleteUserSession,
+  deleteUserSessions,
+  describeDevice,
+  listUserSessions,
+  SESSION_COOKIE,
+} from '../auth/sessions.js';
 import { deleteUserTokens, findValidToken, latestToken } from '../auth/tokens.js';
-import { issueInvitation, sendPasswordResetLink } from '../services/access.js';
+import { generateRecoveryCodes, generateSecret, hashRecoveryCode, otpauthUrl, verifyCode } from '../auth/totp.js';
+import { issueInvitation, publicBaseUrl, sendPasswordResetLink } from '../services/access.js';
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, 'Enter your email address'),
@@ -20,7 +31,26 @@ const loginSchema = z.object({
 
 const setupSchema = z.object({ name: zName, email: zEmail, password: zPassword });
 
-const profileSchema = z.object({ name: zName.optional(), title: zTitle.optional(), color: zColor.optional() });
+const profileSchema = z.object({
+  name: zName.optional(),
+  title: zTitle.optional(),
+  color: zColor.optional(),
+  notifyEmail: z.enum(NOTIFY_EMAIL_MODES, 'Choose instant, daily or off').optional(),
+});
+
+const challengeSchema = z.object({
+  challenge: z.string().min(20).max(200),
+  code: z.string().trim().min(1, 'Enter the code from your authenticator app').max(40),
+});
+const passwordOnlySchema = z.object({ password: z.string().min(1, 'Enter your password') });
+const codeSchema = z.object({ code: z.string().trim().min(1, 'Enter the code from your authenticator app').max(20) });
+const calendarSchema = z.object({ scope: z.enum(['mine', 'all']).default('mine') });
+
+/** A sign-in waiting for its second step works this long, for this many tries. */
+const CHALLENGE_MINUTES = 5;
+const CHALLENGE_ATTEMPTS = 5;
+
+const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1, 'Enter your current password'),
@@ -71,6 +101,35 @@ export function authRouter(ctx: AppContext): Router {
   /** Self-service resets need email, and APP_URL so links never depend on the address a stranger's request used. */
   const passwordResetEnabled = () => mailer.enabled && config.appUrl !== null;
 
+  /** Password was right; the authenticator code is still to come. */
+  const issueChallenge = (user: UserRow): TwoFactorChallenge => {
+    const token = randomBytes(32).toString('base64url');
+    const now = new Date();
+    db.prepare('DELETE FROM login_challenges WHERE user_id = ? OR expires_at <= ?').run(user.id, now.toISOString());
+    db.prepare('INSERT INTO login_challenges (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(
+      hash(token),
+      user.id,
+      now.toISOString(),
+      new Date(now.getTime() + CHALLENGE_MINUTES * 60_000).toISOString(),
+    );
+    return { twoFactorRequired: true, challenge: token };
+  };
+
+  /** Accepts a current authenticator code (once) or an unused recovery code (once). */
+  const checkSecondFactor = (user: UserRow, code: string): boolean => {
+    const counter = verifyCode(user.totp_secret!, code, user.totp_last_counter);
+    if (counter !== null) {
+      db.prepare('UPDATE users SET totp_last_counter = ? WHERE id = ?').run(counter, user.id);
+      return true;
+    }
+    // Six digits is an authenticator code; anything else may be a recovery code.
+    if (/^\d{6}$/.test(code.replace(/\s+/g, ''))) return false;
+    const used = db
+      .prepare('UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL')
+      .run(nowIso(), user.id, hashRecoveryCode(code));
+    return used.changes > 0;
+  };
+
   const startSession = (req: Request, res: Response, userId: number) => {
     const { token, expiresAt } = createSession(db, userId, config.sessionTtlDays, {
       userAgent: req.get('user-agent'),
@@ -85,6 +144,7 @@ export function authRouter(ctx: AppContext): Router {
       setupRequired: countUsers(db) === 0,
       emailEnabled: mailer.enabled,
       passwordResetEnabled: passwordResetEnabled(),
+      uploadLimitBytes: config.maxUploadBytes,
     };
     res.json(body);
   });
@@ -104,9 +164,9 @@ export function authRouter(ctx: AppContext): Router {
       });
     });
     const user = create.immediate();
-    updateUser(db, user.id, { lastLoginAt: nowIso() });
+    const signedIn = updateUser(db, user.id, { lastLoginAt: nowIso() });
     startSession(req, res, user.id);
-    res.status(201).json({ user: toUser(user, { includePrivate: true }) });
+    res.status(201).json({ user: toMe(db, signedIn) });
   });
 
   router.post('/login', limiter, async (req, res) => {
@@ -118,9 +178,39 @@ export function authRouter(ctx: AppContext): Router {
     if (!user || !valid) throw new HttpError(401, 'Incorrect email or password.');
     if (!user.is_active) throw forbidden('This account has been deactivated. Please contact an administrator.');
 
+    if (user.totp_secret) {
+      res.json(issueChallenge(user));
+      return;
+    }
     const updated = updateUser(db, user.id, { lastLoginAt: nowIso() });
     startSession(req, res, user.id);
-    res.json({ user: toUser(updated, { includePrivate: updated.role === 'admin' }) });
+    res.json({ user: toMe(db, updated) });
+  });
+
+  /** Second sign-in step: a code from the authenticator app, or a recovery code. */
+  router.post('/login/verify', limiter, (req, res) => {
+    const input = parse(challengeSchema, req.body);
+    const id = hash(input.challenge);
+    const row = db.prepare('SELECT * FROM login_challenges WHERE id = ?').get(id) as
+      | { id: string; user_id: number; expires_at: string; attempts: number }
+      | undefined;
+    if (!row || Date.parse(row.expires_at) <= Date.now() || row.attempts >= CHALLENGE_ATTEMPTS) {
+      if (row) db.prepare('DELETE FROM login_challenges WHERE id = ?').run(id);
+      throw new HttpError(410, 'This sign-in has expired. Enter your email and password again.');
+    }
+    const user = getUserById(db, row.user_id);
+    if (!user || !user.is_active || !user.totp_secret) {
+      db.prepare('DELETE FROM login_challenges WHERE id = ?').run(id);
+      throw new HttpError(410, 'This sign-in has expired. Enter your email and password again.');
+    }
+    if (!checkSecondFactor(user, input.code)) {
+      db.prepare('UPDATE login_challenges SET attempts = attempts + 1 WHERE id = ?').run(id);
+      throw badRequest('That code isn’t right. Check the time on your phone and try again.', { code: 'Incorrect code' });
+    }
+    db.prepare('DELETE FROM login_challenges WHERE id = ?').run(id);
+    const updated = updateUser(db, user.id, { lastLoginAt: nowIso() });
+    startSession(req, res, user.id);
+    res.json({ user: toMe(db, updated) });
   });
 
   router.post('/logout', (req, res) => {
@@ -131,14 +221,140 @@ export function authRouter(ctx: AppContext): Router {
   });
 
   router.get('/me', requireSession, (req, res) => {
-    res.json({ user: toUser(req.user!, { includePrivate: req.user!.role === 'admin' }) });
+    res.json({ user: toMe(db, req.user!) });
   });
 
   router.patch('/me', requireSession, (req, res) => {
     const input = parse(profileSchema, req.body);
     const user = updateUser(db, req.user!.id, input);
     ctx.events.broadcast({ entity: 'user', action: 'updated', id: user.id, actorId: user.id });
-    res.json({ user: toUser(user, { includePrivate: user.role === 'admin' }) });
+    res.json({ user: toMe(db, user) });
+  });
+
+  // -------------------------------------------------------------------------
+  // Signed-in devices
+  // -------------------------------------------------------------------------
+
+  router.get('/sessions', requireSession, (req, res) => {
+    const sessions: SessionInfo[] = listUserSessions(db, req.user!.id).map((s) => ({
+      id: s.id,
+      current: s.id === req.sessionId,
+      device: describeDevice(s.user_agent),
+      ip: s.ip,
+      createdAt: s.created_at,
+      lastActiveAt: s.last_active_at ?? s.last_seen_at,
+    }));
+    res.json({ sessions });
+  });
+
+  router.delete('/sessions/:id', requireSession, (req, res) => {
+    const id = String(req.params.id);
+    if (id === req.sessionId) throw badRequest('To sign out on this device, use “Sign out”.');
+    if (!deleteUserSession(db, req.user!.id, id)) throw new HttpError(404, 'That session has already ended.');
+    res.status(204).end();
+  });
+
+  router.post('/sessions/sign-out-others', requireSession, (req, res) => {
+    deleteUserSessions(db, req.user!.id, req.sessionId);
+    res.status(204).end();
+  });
+
+  // -------------------------------------------------------------------------
+  // Two-factor sign-in (authenticator app)
+  // -------------------------------------------------------------------------
+
+  const confirmPassword = async (user: UserRow, password: string) => {
+    if (!(await verifyPassword(password, user.password_hash))) {
+      throw badRequest('Your password is incorrect.', { password: 'Incorrect password' });
+    }
+  };
+
+  const freshRecoveryCodes = (userId: number): string[] => {
+    const codes = generateRecoveryCodes();
+    db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(userId);
+    const add = db.prepare('INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)');
+    for (const code of codes) add.run(userId, hashRecoveryCode(code));
+    return codes;
+  };
+
+  /** Starts setting up two-factor sign-in: returns the secret and a QR code to scan. */
+  router.post('/2fa/setup', requireAuth, async (req, res) => {
+    const { password } = parse(passwordOnlySchema, req.body);
+    const me = req.user!;
+    await confirmPassword(me, password);
+    if (me.totp_secret) throw badRequest('Two-factor sign-in is already on.');
+    const secret = generateSecret();
+    db.prepare('UPDATE users SET totp_pending_secret = ? WHERE id = ?').run(secret, me.id);
+    const url = otpauthUrl(secret, me.email, config.appName);
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    res.json({ secret, otpauthUrl: url, qrSvg: qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true }) });
+  });
+
+  /** Confirms the first code from the app, switches two-factor on and returns recovery codes (shown once). */
+  router.post('/2fa/enable', requireAuth, (req, res) => {
+    const { code } = parse(codeSchema, req.body);
+    const me = getUserById(db, req.user!.id)!;
+    if (me.totp_secret) throw badRequest('Two-factor sign-in is already on.');
+    if (!me.totp_pending_secret) throw badRequest('Start the setup again: scan a new QR code first.');
+    const counter = verifyCode(me.totp_pending_secret, code, null);
+    if (counter === null) throw badRequest('That code isn’t right. Check the time on your phone and try again.', { code: 'Incorrect code' });
+    const recoveryCodes = db.transaction(() => {
+      db.prepare(
+        'UPDATE users SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled_at = ?, totp_last_counter = ? WHERE id = ?',
+      ).run(nowIso(), counter, me.id);
+      return freshRecoveryCodes(me.id);
+    })();
+    // Other devices must sign in again, now with a code.
+    deleteUserSessions(db, me.id, req.sessionId);
+    res.json({ recoveryCodes, user: toMe(db, getUserById(db, me.id)!) });
+  });
+
+  router.post('/2fa/disable', requireAuth, async (req, res) => {
+    const { password } = parse(passwordOnlySchema, req.body);
+    const me = req.user!;
+    await confirmPassword(me, password);
+    db.transaction(() => {
+      db.prepare(
+        'UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_counter = NULL WHERE id = ?',
+      ).run(me.id);
+      db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(me.id);
+    })();
+    res.json({ user: toMe(db, getUserById(db, me.id)!) });
+  });
+
+  router.post('/2fa/recovery-codes', requireAuth, async (req, res) => {
+    const { password } = parse(passwordOnlySchema, req.body);
+    const me = req.user!;
+    await confirmPassword(me, password);
+    if (!me.totp_secret) throw badRequest('Turn on two-factor sign-in first.');
+    const recoveryCodes = db.transaction(() => freshRecoveryCodes(me.id))();
+    res.json({ recoveryCodes, user: toMe(db, getUserById(db, me.id)!) });
+  });
+
+  // -------------------------------------------------------------------------
+  // Calendar feed address
+  // -------------------------------------------------------------------------
+
+  /** Creates a new secret calendar address (the old one stops working). Shown once. */
+  router.post('/calendar', requireAuth, (req, res) => {
+    const { scope } = parse(calendarSchema, req.body);
+    const token = randomBytes(24).toString('base64url');
+    db.prepare('UPDATE users SET calendar_token_hash = ?, calendar_scope = ? WHERE id = ?').run(hash(token), scope, req.user!.id);
+    const base = publicBaseUrl(ctx, req);
+    res.json({ url: `${base}/api/calendar/${token}.ics`, user: toMe(db, getUserById(db, req.user!.id)!) });
+  });
+
+  router.patch('/calendar', requireAuth, (req, res) => {
+    const { scope } = parse(calendarSchema, req.body);
+    db.prepare('UPDATE users SET calendar_scope = ? WHERE id = ?').run(scope, req.user!.id);
+    res.json({ user: toMe(db, getUserById(db, req.user!.id)!) });
+  });
+
+  router.delete('/calendar', requireAuth, (req, res) => {
+    db.prepare('UPDATE users SET calendar_token_hash = NULL WHERE id = ?').run(req.user!.id);
+    res.json({ user: toMe(db, getUserById(db, req.user!.id)!) });
   });
 
   /** Changes the signed-in user's password and signs out their other sessions. */
@@ -159,7 +375,7 @@ export function authRouter(ctx: AppContext): Router {
     });
     deleteUserSessions(db, me.id, req.sessionId);
     deleteUserTokens(db, me.id, 'reset');
-    res.json({ user: toUser(user, { includePrivate: user.role === 'admin' }) });
+    res.json({ user: toMe(db, user) });
   });
 
   // -------------------------------------------------------------------------
@@ -200,7 +416,7 @@ export function authRouter(ctx: AppContext): Router {
 
     startSession(req, res, user.id);
     ctx.events.broadcast({ entity: 'user', action: 'updated', id: user.id, actorId: user.id });
-    res.json({ user: toUser(user, { includePrivate: user.role === 'admin' }) });
+    res.json({ user: toMe(db, user) });
   });
 
   // -------------------------------------------------------------------------
@@ -262,8 +478,13 @@ export function authRouter(ctx: AppContext): Router {
     const user = complete.immediate();
 
     ctx.events.disconnectUser(user.id);
+    // A reset link proves access to the email account, not the second factor.
+    if (user.totp_secret) {
+      res.json(issueChallenge(user));
+      return;
+    }
     startSession(req, res, user.id);
-    res.json({ user: toUser(user, { includePrivate: user.role === 'admin' }) });
+    res.json({ user: toMe(db, user) });
   });
 
   return router;

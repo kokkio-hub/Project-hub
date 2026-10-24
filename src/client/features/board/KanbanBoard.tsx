@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   closestCorners,
   DndContext,
@@ -18,53 +18,87 @@ import {
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
-import { MessageSquare, Plus } from 'lucide-react';
-import { TASK_STATUSES, TASK_STATUS_LABELS, type Task, type TaskStatus, type User } from '../../../shared/types';
+import { ArrowLeft, ArrowRight, Ellipsis, ListChecks, Lock, MessageSquare, Paperclip, Pencil, Plus, Repeat, Trash2 } from 'lucide-react';
+import {
+  MAX_COLUMNS,
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+  type BoardColumn,
+  type Label,
+  type Project,
+  type Task,
+  type TaskStatus,
+  type User,
+} from '../../../shared/types';
+import { describeRecurrence } from '../../../shared/recurrence';
 import { errorMessage } from '../../api/client';
+import { useAddColumn, useDeleteColumn, useReorderColumns, useUpdateColumn } from '../../api/board';
 import { qk, useCreateTask, useMoveTask, type TaskQuery } from '../../api/queries';
 import { Avatar } from '../../components/Avatar';
 import { DueChip } from '../../components/Bits';
-import { useToast } from '../../components/Feedback';
+import { Spinner, useToast } from '../../components/Feedback';
 import { PriorityIcon, StatusIcon } from '../../components/Icons';
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from '../../components/Menu';
+import { Modal } from '../../components/Modal';
+import { formatDate } from '../../lib/format';
 import { useAutosize } from '../../lib/hooks';
+import { LabelList } from '../labels/Labels';
 
-type Columns = Record<TaskStatus, number[]>;
+type Columns = Map<number, number[]>;
 
-function groupByStatus(tasks: Task[]): Columns {
-  const columns: Columns = { todo: [], in_progress: [], review: [], done: [] };
+/** Toast text after finishing a repeating task. */
+export function nextCopyMessage(next: Task): string {
+  const when = next.dueDate ? `due ${formatDate(next.dueDate)}` : next.startDate ? `starting ${formatDate(next.startDate)}` : 'added';
+  return `This task repeats: the next one is ${when}.`;
+}
+
+const dropId = (columnId: number) => `col-${columnId}`;
+const isColumnId = (id: UniqueIdentifier): id is string => typeof id === 'string' && id.startsWith('col-');
+const columnIdOf = (id: string) => Number(id.slice(4));
+
+/** Tasks by column, in board order. Tasks whose column no longer exists go to the first column of their stage. */
+function group(columns: BoardColumn[], tasks: Task[]): Columns {
+  const map: Columns = new Map(columns.map((c) => [c.id, []]));
   const sorted = [...tasks].sort((a, b) => a.position - b.position || a.id - b.id);
-  for (const task of sorted) columns[task.status].push(task.id);
-  return columns;
+  for (const task of sorted) {
+    let id = task.columnId;
+    if (id === null || !map.has(id)) id = (columns.find((c) => c.stage === task.status) ?? columns[0])?.id ?? null;
+    if (id !== null) map.get(id)!.push(task.id);
+  }
+  return map;
 }
 
-function isStatus(id: UniqueIdentifier): id is TaskStatus {
-  return typeof id === 'string' && (TASK_STATUSES as readonly string[]).includes(id);
-}
+const sameColumns = (a: Columns, b: Columns) => [...a.entries()].every(([k, v]) => (b.get(k) ?? []).join() === v.join());
 
 interface BoardProps {
-  projectId: number;
+  project: Project;
   /** Tasks to show (already filtered). */
   tasks: Task[];
   /** The query whose cache holds this project's tasks, updated optimistically on drop. */
   cacheKey: TaskQuery;
   usersById: Map<number, User>;
   readOnly: boolean;
+  /** The owner and admins can change the columns. */
+  canEditColumns: boolean;
   onOpenTask: (id: number) => void;
 }
 
-export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, onOpenTask }: BoardProps) {
+export function KanbanBoard({ project, tasks, cacheKey, usersById, readOnly, canEditColumns, onOpenTask }: BoardProps) {
   const qc = useQueryClient();
   const move = useMoveTask();
   const toast = useToast();
-  const [columns, setColumns] = useState<Columns>(() => groupByStatus(tasks));
+  const columnsList = useMemo(() => [...project.columns].sort((a, b) => a.position - b.position || a.id - b.id), [project.columns]);
+  const [columns, setColumns] = useState<Columns>(() => group(columnsList, tasks));
   const [activeId, setActiveId] = useState<number | null>(null);
-  const originStatus = useRef<TaskStatus | null>(null);
+  const [addingColumn, setAddingColumn] = useState(false);
+  const originColumn = useRef<number | null>(null);
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const columnById = useMemo(() => new Map(columnsList.map((c) => [c.id, c])), [columnsList]);
 
   // Follow server data, except mid-drag (a teammate's change must not yank the card away).
   useEffect(() => {
-    if (activeId === null) setColumns(groupByStatus(tasks));
-  }, [tasks, activeId]);
+    if (activeId === null) setColumns(group(columnsList, tasks));
+  }, [tasks, columnsList, activeId]);
 
   // Mouse drags start after a few pixels (so clicks still open cards); touch needs a short
   // press-and-hold, so swiping still scrolls the board on phones.
@@ -77,12 +111,15 @@ export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, o
     }),
   );
 
-  const columnOf = (id: UniqueIdentifier): TaskStatus | undefined =>
-    isStatus(id) ? id : TASK_STATUSES.find((s) => columns[s].includes(Number(id)));
+  const columnOf = (id: UniqueIdentifier): number | undefined => {
+    if (isColumnId(id)) return columnIdOf(id);
+    for (const [columnId, ids] of columns) if (ids.includes(Number(id))) return columnId;
+    return undefined;
+  };
 
   const onDragStart = ({ active }: DragStartEvent) => {
     setActiveId(Number(active.id));
-    originStatus.current = columnOf(active.id) ?? null;
+    originColumn.current = columnOf(active.id) ?? null;
   };
 
   // Moving across columns while dragging, so the card previews its new place.
@@ -90,19 +127,22 @@ export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, o
     if (!over) return;
     const from = columnOf(active.id);
     const to = columnOf(over.id);
-    if (!from || !to || from === to) return;
+    if (from === undefined || to === undefined || from === to) return;
     const id = Number(active.id);
     setColumns((prev) => {
-      const target = prev[to].filter((x) => x !== id);
+      const target = (prev.get(to) ?? []).filter((x) => x !== id);
       let index = target.length;
-      if (!isStatus(over.id)) {
+      if (!isColumnId(over.id)) {
         const overIndex = target.indexOf(Number(over.id));
         const translated = active.rect.current.translated;
         const below = translated ? translated.top > over.rect.top + over.rect.height / 2 : false;
         if (overIndex >= 0) index = overIndex + (below ? 1 : 0);
       }
       target.splice(index, 0, id);
-      return { ...prev, [from]: prev[from].filter((x) => x !== id), [to]: target };
+      const next = new Map(prev);
+      next.set(from, (prev.get(from) ?? []).filter((x) => x !== id));
+      next.set(to, target);
+      return next;
     });
   };
 
@@ -110,59 +150,75 @@ export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, o
     const id = Number(active.id);
     const to = over ? columnOf(over.id) : undefined;
     const task = tasksById.get(id);
-    if (!over || !to || !task) {
-      setColumns(groupByStatus(tasks));
+    const column = to !== undefined ? columnById.get(to) : undefined;
+    if (!over || to === undefined || !task || !column) {
+      setColumns(group(columnsList, tasks));
       setActiveId(null);
       return;
     }
 
-    let items = columns[to];
-    if (!isStatus(over.id)) {
+    let items = columns.get(to) ?? [];
+    if (!isColumnId(over.id)) {
       const oldIndex = items.indexOf(id);
       const newIndex = items.indexOf(Number(over.id));
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) items = arrayMove(items, oldIndex, newIndex);
     }
-    const next = { ...columns, [to]: items };
+    const next = new Map(columns);
+    next.set(to, items);
     const index = items.indexOf(id);
     const afterId = index > 0 ? items[index - 1]! : null;
-    const unchanged = to === originStatus.current && groupByStatus(tasks)[to].join() === items.join();
+    const unchanged = to === originColumn.current && sameColumns(group(columnsList, tasks), next);
 
     setColumns(next);
     if (!unchanged) {
       // Update the cache first so the board doesn't flicker back while the request is in flight.
-      const positions = new Map<number, { status: TaskStatus; position: number }>();
-      for (const status of TASK_STATUSES) next[status].forEach((taskId, position) => positions.set(taskId, { status, position }));
+      const places = new Map<number, { columnId: number; status: TaskStatus; position: number }>();
+      for (const [columnId, ids] of next) {
+        const stage = columnById.get(columnId)?.stage ?? 'todo';
+        ids.forEach((taskId, position) => places.set(taskId, { columnId, status: stage, position }));
+      }
       qc.setQueryData<Task[]>(qk.tasks(cacheKey), (old) =>
         old?.map((t) => {
-          const place = positions.get(t.id);
+          const place = places.get(t.id);
           if (!place) return t;
           const completedAt = place.status === 'done' ? (t.completedAt ?? new Date().toISOString()) : null;
           return { ...t, ...place, completedAt };
         }),
       );
       move.mutate(
-        { id, status: to, afterId },
-        { onError: (error) => toast.error(`Couldn't move the task: ${errorMessage(error)}`) },
+        { id, columnId: to, afterId },
+        {
+          onSuccess: (result) => {
+            if (result.next) toast.success(nextCopyMessage(result.next));
+          },
+          onError: (error) => toast.error(`Couldn't move the task: ${errorMessage(error)}`),
+        },
       );
     }
     setActiveId(null);
   };
 
+  const nameOf = (id: UniqueIdentifier | undefined) => {
+    const c = id !== undefined ? columnOf(id) : undefined;
+    return c !== undefined ? (columnById.get(c)?.name ?? 'a column') : undefined;
+  };
+
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up ${tasksById.get(Number(active.id))?.title ?? 'task'}.`,
     onDragOver: ({ active, over }) => {
-      const status = over ? columnOf(over.id) : undefined;
-      return status ? `${tasksById.get(Number(active.id))?.title ?? 'Task'} is over ${TASK_STATUS_LABELS[status]}.` : undefined;
+      const name = nameOf(over?.id);
+      return name ? `${tasksById.get(Number(active.id))?.title ?? 'Task'} is over ${name}.` : undefined;
     },
     onDragEnd: ({ active, over }) => {
-      const status = over ? columnOf(over.id) : undefined;
+      const name = nameOf(over?.id);
       const title = tasksById.get(Number(active.id))?.title ?? 'Task';
-      return status ? `${title} dropped in ${TASK_STATUS_LABELS[status]}.` : `${title} dropped.`;
+      return name ? `${title} dropped in ${name}.` : `${title} dropped.`;
     },
     onDragCancel: ({ active }) => `Moving ${tasksById.get(Number(active.id))?.title ?? 'task'} was cancelled.`,
   };
 
   const activeTask = activeId !== null ? tasksById.get(activeId) : undefined;
+  const showAdd = canEditColumns && !readOnly && columnsList.length < MAX_COLUMNS;
 
   return (
     <DndContext
@@ -172,7 +228,7 @@ export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, o
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDragCancel={() => {
-        setColumns(groupByStatus(tasks));
+        setColumns(group(columnsList, tasks));
         setActiveId(null);
       }}
       accessibility={{
@@ -183,66 +239,138 @@ export function KanbanBoard({ projectId, tasks, cacheKey, usersById, readOnly, o
         },
       }}
     >
-      <div className="board">
-        {TASK_STATUSES.map((status) => (
-          <BoardColumn
-            key={status}
-            status={status}
-            projectId={projectId}
-            taskIds={columns[status]}
+      <div
+        className={`board ${showAdd ? (addingColumn ? 'is-adding' : 'has-add') : ''}`}
+        style={{ '--board-cols': columnsList.length } as React.CSSProperties}
+      >
+        {columnsList.map((column, index) => (
+          <BoardColumnView
+            key={column.id}
+            column={column}
+            index={index}
+            columns={columnsList}
+            project={project}
+            taskIds={columns.get(column.id) ?? []}
             tasksById={tasksById}
             usersById={usersById}
             readOnly={readOnly}
+            canEdit={canEditColumns && !readOnly}
             onOpenTask={onOpenTask}
           />
         ))}
+        {showAdd && <AddColumn projectId={project.id} open={addingColumn} onOpenChange={setAddingColumn} />}
       </div>
       <DragOverlay dropAnimation={{ duration: 160, easing: 'ease-out' }}>
         {activeTask ? (
-          <TaskCard task={activeTask} assignee={activeTask.assigneeId ? usersById.get(activeTask.assigneeId) : undefined} overlay />
+          <TaskCard
+            task={activeTask}
+            labels={project.labels}
+            assignee={activeTask.assigneeId ? usersById.get(activeTask.assigneeId) : undefined}
+            overlay
+          />
         ) : null}
       </DragOverlay>
     </DndContext>
   );
 }
 
-function BoardColumn({
-  status,
-  projectId,
+function BoardColumnView({
+  column,
+  index,
+  columns,
+  project,
   taskIds,
   tasksById,
   usersById,
   readOnly,
+  canEdit,
   onOpenTask,
 }: {
-  status: TaskStatus;
-  projectId: number;
+  column: BoardColumn;
+  index: number;
+  columns: BoardColumn[];
+  project: Project;
   taskIds: number[];
   tasksById: Map<number, Task>;
   usersById: Map<number, User>;
   readOnly: boolean;
+  canEdit: boolean;
   onOpenTask: (id: number) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: readOnly });
+  const { setNodeRef, isOver } = useDroppable({ id: dropId(column.id), disabled: readOnly });
   const [composing, setComposing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const update = useUpdateColumn();
+  const reorder = useReorderColumns(project.id);
+  const toast = useToast();
+
+  const moveColumn = (delta: number) => {
+    const ids = columns.map((c) => c.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    reorder.mutate(ids, { onError: (e) => toast.error(errorMessage(e)) });
+  };
+
+  const setStage = (stage: TaskStatus) =>
+    update.mutate({ id: column.id, patch: { stage } }, { onError: (e) => toast.error(errorMessage(e)) });
 
   return (
-    <section className={`board-column ${isOver ? 'is-over' : ''}`} aria-label={TASK_STATUS_LABELS[status]}>
+    <section className={`board-column ${isOver ? 'is-over' : ''}`} aria-label={column.name}>
       <header className="board-column-header">
-        <StatusIcon status={status} />
-        <h3>{TASK_STATUS_LABELS[status]}</h3>
+        <StatusIcon status={column.stage} />
+        {renaming ? (
+          <RenameColumn column={column} onDone={() => setRenaming(false)} />
+        ) : (
+          <h3 className="truncate" title={`${column.name} (${TASK_STATUS_LABELS[column.stage]})`}>
+            {column.name}
+          </h3>
+        )}
         <span className="board-count num">{taskIds.length}</span>
         <span className="spacer" />
-        {!readOnly && (
+        {!readOnly && !renaming && (
           <button
             type="button"
             className="icon-btn icon-btn-sm"
             onClick={() => setComposing(true)}
-            aria-label={`Add task to ${TASK_STATUS_LABELS[status]}`}
+            aria-label={`Add task to ${column.name}`}
             title="Add task"
           >
             <Plus size={16} />
           </button>
+        )}
+        {canEdit && !renaming && (
+          <Menu
+            trigger={(props) => (
+              <button type="button" className="icon-btn icon-btn-sm" aria-label={`Options for column ${column.name}`} {...props}>
+                <Ellipsis size={16} />
+              </button>
+            )}
+          >
+            <MenuItem icon={<Pencil size={16} />} onSelect={() => setRenaming(true)}>
+              Rename
+            </MenuItem>
+            <MenuSeparator />
+            <MenuLabel>Counts as</MenuLabel>
+            {TASK_STATUSES.map((stage) => (
+              <MenuItem key={stage} icon={<StatusIcon status={stage} size={16} />} onSelect={() => setStage(stage)}>
+                {TASK_STATUS_LABELS[stage]}
+                {column.stage === stage && <span className="muted" style={{ marginLeft: 'auto' }}>✓</span>}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+            <MenuItem icon={<ArrowLeft size={16} />} onSelect={() => moveColumn(-1)} disabled={index === 0}>
+              Move left
+            </MenuItem>
+            <MenuItem icon={<ArrowRight size={16} />} onSelect={() => moveColumn(1)} disabled={index === columns.length - 1}>
+              Move right
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<Trash2 size={16} />} danger onSelect={() => setDeleting(true)}>
+              Delete column…
+            </MenuItem>
+          </Menu>
         )}
       </header>
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
@@ -254,6 +382,7 @@ function BoardColumn({
               <SortableCard
                 key={id}
                 task={task}
+                labels={project.labels}
                 assignee={task.assigneeId ? usersById.get(task.assigneeId) : undefined}
                 disabled={readOnly}
                 onOpen={onOpenTask}
@@ -262,7 +391,7 @@ function BoardColumn({
           })}
           {taskIds.length === 0 && !composing && <div className="board-empty">No tasks</div>}
           {composing ? (
-            <QuickAdd projectId={projectId} status={status} onDone={() => setComposing(false)} />
+            <QuickAdd projectId={project.id} column={column} onDone={() => setComposing(false)} />
           ) : (
             !readOnly && (
               <button type="button" className="board-add" onClick={() => setComposing(true)}>
@@ -272,17 +401,186 @@ function BoardColumn({
           )}
         </div>
       </SortableContext>
+      <DeleteColumnDialog column={column} columns={columns} count={taskIds.length} open={deleting} onClose={() => setDeleting(false)} />
     </section>
+  );
+}
+
+function RenameColumn({ column, onDone }: { column: BoardColumn; onDone: () => void }) {
+  const [name, setName] = useState(column.name);
+  const update = useUpdateColumn();
+  const toast = useToast();
+  const save = () => {
+    const value = name.trim();
+    if (!value || value === column.name) {
+      onDone();
+      return;
+    }
+    update.mutate({ id: column.id, patch: { name: value } }, { onSuccess: onDone, onError: (e) => toast.error(errorMessage(e)) });
+  };
+  return (
+    <input
+      className="input input-sm column-name-input"
+      value={name}
+      maxLength={40}
+      autoFocus
+      aria-label="Column name"
+      onChange={(e) => setName(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') save();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onDone();
+        }
+      }}
+    />
+  );
+}
+
+function DeleteColumnDialog({
+  column,
+  columns,
+  count,
+  open,
+  onClose,
+}: {
+  column: BoardColumn;
+  columns: BoardColumn[];
+  count: number;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const others = columns.filter((c) => c.id !== column.id);
+  const [moveTo, setMoveTo] = useState<number>(others.find((c) => c.stage === column.stage)?.id ?? others[0]?.id ?? 0);
+  const remove = useDeleteColumn();
+  const toast = useToast();
+  const lastDone = column.stage === 'done' && !others.some((c) => c.stage === 'done');
+  const lastOpen = column.stage !== 'done' && !others.some((c) => c.stage !== 'done');
+
+  const submit = () =>
+    remove.mutate(
+      { id: column.id, moveTo },
+      {
+        onSuccess: () => {
+          toast.success(`Column “${column.name}” deleted`);
+          onClose();
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    );
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Delete “${column.name}”?`}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-danger" onClick={submit} disabled={remove.isPending || lastDone || lastOpen || !moveTo}>
+            {remove.isPending && <Spinner size={16} />}
+            Delete column
+          </button>
+        </>
+      }
+    >
+      <div className="modal-body stack" style={{ gap: 12 }}>
+        {lastDone || lastOpen ? (
+          <p className="secondary">
+            A board needs at least one column for {lastDone ? 'finished' : 'unfinished'} work. Add another one first, or change what this column
+            counts as.
+          </p>
+        ) : (
+          <>
+            <p className="secondary">
+              {count === 0 ? 'The column is empty.' : `Its ${count === 1 ? 'task moves' : `${count} tasks move`} to another column.`}
+            </p>
+            <label className="field">
+              <span className="field-label">Move tasks to</span>
+              <select className="select" value={moveTo} onChange={(e) => setMoveTo(Number(e.target.value))}>
+                {others.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function AddColumn({ projectId, open, onOpenChange: setOpen }: { projectId: number; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [name, setName] = useState('');
+  const [stage, setStage] = useState<TaskStatus>('in_progress');
+  const add = useAddColumn(projectId);
+  const toast = useToast();
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!name.trim()) return;
+    add.mutate(
+      { name: name.trim(), stage },
+      {
+        onSuccess: () => {
+          setName('');
+          setOpen(false);
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    );
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="board-add-column" onClick={() => setOpen(true)} aria-label="Add column" title="Add column">
+        <Plus size={18} aria-hidden />
+      </button>
+    );
+  }
+  return (
+    <form className="board-column board-new-column" onSubmit={submit}>
+      <label className="field">
+        <span className="field-label">Column name</span>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus placeholder="e.g. Waiting for client" />
+      </label>
+      <label className="field">
+        <span className="field-label">Counts as</span>
+        <select className="select" value={stage} onChange={(e) => setStage(e.target.value as TaskStatus)}>
+          {TASK_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {TASK_STATUS_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <span className="field-hint">Progress and the dashboard use this.</span>
+      </label>
+      <div className="row">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={add.isPending || !name.trim()}>
+          Add column
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
 const SortableCard = memo(function SortableCard({
   task,
+  labels,
   assignee,
   disabled,
   onOpen,
 }: {
   task: Task;
+  labels: Label[];
   assignee: User | undefined;
   disabled: boolean;
   onOpen: (id: number) => void;
@@ -295,7 +593,9 @@ const SortableCard = memo(function SortableCard({
       className={`sortable ${isDragging ? 'is-placeholder' : ''}`}
       {...attributes}
       {...listeners}
-      aria-roledescription="Draggable task"
+      // A read-only board can't be dragged, but its cards still open: don't announce them as disabled.
+      aria-disabled={undefined}
+      aria-roledescription={disabled ? 'Task' : 'Draggable task'}
       aria-label={task.title}
       onClick={() => onOpen(task.id)}
       onKeyDown={(event) => {
@@ -304,18 +604,56 @@ const SortableCard = memo(function SortableCard({
         if (event.key === 'Enter' && !isDragging && !event.defaultPrevented) onOpen(task.id);
       }}
     >
-      <TaskCard task={task} assignee={assignee} />
+      <TaskCard task={task} labels={labels} assignee={assignee} />
     </div>
   );
 });
 
-export function TaskCard({ task, assignee, overlay }: { task: Task; assignee: User | undefined; overlay?: boolean }) {
+export function TaskCard({
+  task,
+  labels,
+  assignee,
+  overlay,
+}: {
+  task: Task;
+  labels: Label[];
+  assignee: User | undefined;
+  overlay?: boolean;
+}) {
+  const blocked = task.openBlockerCount > 0 && task.status !== 'done';
   return (
     <article className={`task-card ${overlay ? 'is-overlay' : ''} ${task.status === 'done' ? 'is-done' : ''}`}>
+      {task.labelIds.length > 0 && <LabelList ids={task.labelIds} labels={labels} />}
       <p className="task-card-title">{task.title}</p>
       <div className="task-card-meta">
         <PriorityIcon priority={task.priority} />
+        {blocked && (
+          <span className="chip chip-blocked" title={`Waiting for ${task.openBlockerCount} other ${task.openBlockerCount === 1 ? 'task' : 'tasks'}`}>
+            <Lock size={12} aria-hidden />
+            Blocked
+          </span>
+        )}
         <DueChip dueDate={task.dueDate} status={task.status} />
+        {task.recurrence && (
+          <span className="chip" title={describeRecurrence(task.recurrence)}>
+            <Repeat size={13} aria-label={describeRecurrence(task.recurrence)} />
+          </span>
+        )}
+        {task.checklistTotal > 0 && (
+          <span
+            className={`chip ${task.checklistDone === task.checklistTotal ? 'chip-complete' : ''}`}
+            title={`${task.checklistDone} of ${task.checklistTotal} checklist items done`}
+          >
+            <ListChecks size={13} aria-hidden />
+            {task.checklistDone}/{task.checklistTotal}
+          </span>
+        )}
+        {task.attachmentCount > 0 && (
+          <span className="chip" title={`${task.attachmentCount} ${task.attachmentCount === 1 ? 'file' : 'files'}`}>
+            <Paperclip size={13} aria-hidden />
+            {task.attachmentCount}
+          </span>
+        )}
         {task.commentCount > 0 && (
           <span className="chip" title={`${task.commentCount} comments`}>
             <MessageSquare size={13} aria-hidden />
@@ -329,7 +667,7 @@ export function TaskCard({ task, assignee, overlay }: { task: Task; assignee: Us
   );
 }
 
-function QuickAdd({ projectId, status, onDone }: { projectId: number; status: TaskStatus; onDone: () => void }) {
+function QuickAdd({ projectId, column, onDone }: { projectId: number; column: BoardColumn; onDone: () => void }) {
   const [title, setTitle] = useState('');
   const create = useCreateTask();
   const toast = useToast();
@@ -342,7 +680,7 @@ function QuickAdd({ projectId, status, onDone }: { projectId: number; status: Ta
       return;
     }
     create.mutate(
-      { projectId, title: value, status },
+      { projectId, title: value, columnId: column.id },
       {
         onSuccess: () => setTitle(''),
         onError: (error) => toast.error(errorMessage(error)),
@@ -359,7 +697,7 @@ function QuickAdd({ projectId, status, onDone }: { projectId: number; status: Ta
         autoFocus
         value={title}
         placeholder="Task title… (Enter to add, Esc to close)"
-        aria-label={`New task in ${TASK_STATUS_LABELS[status]}`}
+        aria-label={`New task in ${column.name}`}
         onChange={(e) => setTitle(e.target.value.replace(/\n/g, ' '))}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {

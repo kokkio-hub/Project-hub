@@ -33,11 +33,17 @@ export function useLiveUpdates(enabled: boolean): void {
     const handle = (event: LiveEvent) => {
       switch (event.entity) {
         case 'task':
-          queue(['tasks'], ['task', event.id], ['projects'], ['project'], [...qk.dashboard], ['activity']);
+          queue(['tasks'], ['projects'], ['project'], [...qk.dashboard], ['activity'], ['dependencies'], [...qk.trash]);
+          if (event.id > 0) {
+            queue(['task', event.id], ['checklist', event.id], ['attachments', event.id]);
+          } else {
+            // A change to many tasks at once (columns or labels changed).
+            queue(['task']);
+          }
           break;
         case 'project':
-          queue(['projects'], ['project', event.id], [...qk.dashboard], ['activity']);
-          if (event.action === 'deleted') queue(['tasks']);
+          queue(['projects'], ['project'], [...qk.dashboard], ['activity'], [...qk.trash]);
+          if (event.action === 'deleted' || event.action === 'created') queue(['tasks'], ['task']);
           break;
         case 'comment':
           queue(['activity'], [...qk.dashboard]);
@@ -45,8 +51,11 @@ export function useLiveUpdates(enabled: boolean): void {
           break;
         case 'user':
           queue([...qk.users], [...qk.me], [...qk.dashboard]);
-          // A cancelled invitation: tasks that were assigned to that person are now unassigned.
-          if (event.action === 'deleted') queue(['tasks'], ['task'], ['projects'], ['project'], ['activity']);
+          // Someone was removed from a project, or an invitation was cancelled: what people can see may have changed.
+          if (event.action === 'deleted' || event.id === 0) queue(['tasks'], ['task'], ['projects'], ['project'], ['activity']);
+          break;
+        case 'notification':
+          queue([...qk.notifications]);
           break;
       }
     };

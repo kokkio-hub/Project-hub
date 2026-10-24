@@ -8,13 +8,19 @@ export const SESSION_COOKIE = 'ph_session';
 /** Sessions are extended at most this often, to avoid a database write per request. */
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-interface SessionRow {
+export interface SessionRow {
   id: string;
   user_id: number;
   created_at: string;
   expires_at: string;
   last_seen_at: string;
+  last_active_at: string | null;
+  user_agent: string;
+  ip: string;
 }
+
+/** "Last active" on the devices page is updated at most this often. */
+const ACTIVE_INTERVAL_MS = 10 * 60 * 1000;
 
 export interface ActiveSession {
   id: string;
@@ -39,14 +45,23 @@ export function createSession(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlDays * 86_400_000).toISOString();
   db.prepare(
-    `INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, user_agent, ip)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(hashToken(token), userId, now.toISOString(), expiresAt, now.toISOString(), (meta.userAgent ?? '').slice(0, 300), meta.ip ?? '');
+    `INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, last_active_at, user_agent, ip)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    hashToken(token),
+    userId,
+    now.toISOString(),
+    expiresAt,
+    now.toISOString(),
+    now.toISOString(),
+    (meta.userAgent ?? '').slice(0, 300),
+    meta.ip ?? '',
+  );
   return { token, expiresAt };
 }
 
 /** Looks up a session by cookie token. Expired sessions and deactivated users yield null. */
-export function resolveSession(db: DB, token: string, ttlDays: number): ActiveSession | null {
+export function resolveSession(db: DB, token: string, ttlDays: number, meta: { ip?: string } = {}): ActiveSession | null {
   const id = hashToken(token);
   const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | undefined;
   if (!row) return null;
@@ -69,6 +84,9 @@ export function resolveSession(db: DB, token: string, ttlDays: number): ActiveSe
     db.prepare('UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?').run(nowIso(), expiresAt, id);
     refreshed = true;
   }
+  if (!row.last_active_at || now - Date.parse(row.last_active_at) > ACTIVE_INTERVAL_MS || (meta.ip && meta.ip !== row.ip)) {
+    db.prepare('UPDATE sessions SET last_active_at = ?, ip = ? WHERE id = ?').run(nowIso(), meta.ip || row.ip, id);
+  }
   return { id, user, expiresAt, refreshed };
 }
 
@@ -87,4 +105,50 @@ export function deleteUserSessions(db: DB, userId: number, exceptSessionId?: str
 
 export function purgeExpiredSessions(db: DB): number {
   return db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(nowIso()).changes;
+}
+
+export function listUserSessions(db: DB, userId: number): SessionRow[] {
+  return db
+    .prepare('SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY COALESCE(last_active_at, last_seen_at) DESC')
+    .all(userId, nowIso()) as SessionRow[];
+}
+
+export function deleteUserSession(db: DB, userId: number, sessionId: string): boolean {
+  return db.prepare('DELETE FROM sessions WHERE id = ? AND user_id = ?').run(sessionId, userId).changes > 0;
+}
+
+/** "Chrome on Windows", "Safari on iPhone"... from a browser's user agent. */
+export function describeDevice(userAgent: string): string {
+  const ua = userAgent;
+  if (!ua) return 'Unknown device';
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /OPR\/|Opera/.test(ua)
+      ? 'Opera'
+      : /SamsungBrowser/.test(ua)
+        ? 'Samsung Internet'
+        : /Firefox\/|FxiOS/.test(ua)
+          ? 'Firefox'
+          : /Chrome\/|CriOS/.test(ua)
+            ? 'Chrome'
+            : /Safari\//.test(ua)
+              ? 'Safari'
+              : null;
+  const os = /iPhone/.test(ua)
+    ? 'iPhone'
+    : /iPad/.test(ua)
+      ? 'iPad'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /CrOS/.test(ua)
+          ? 'ChromeOS'
+          : /Mac OS X|Macintosh/.test(ua)
+            ? 'Mac'
+            : /Windows/.test(ua)
+              ? 'Windows'
+              : /Linux/.test(ua)
+                ? 'Linux'
+                : null;
+  if (browser && os) return `${browser} on ${os}`;
+  return browser ?? os ?? ua.slice(0, 60);
 }

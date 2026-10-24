@@ -52,10 +52,16 @@ export function authenticate(ctx: AppContext): RequestHandler {
   return (req, res, next) => {
     const token: unknown = req.cookies?.[SESSION_COOKIE];
     if (typeof token === 'string' && token.length > 0) {
-      const session = resolveSession(ctx.db, token, ctx.config.sessionTtlDays);
+      const session = resolveSession(ctx.db, token, ctx.config.sessionTtlDays, { ip: req.ip });
       if (session) {
         req.user = session.user;
         req.sessionId = session.id;
+        // Remember the person's time zone, so reminders and the daily email follow their clock.
+        const offset = Number(req.get('x-client-tz-offset'));
+        if (Number.isInteger(offset) && offset >= -840 && offset <= 840 && offset !== session.user.tz_offset_minutes) {
+          ctx.db.prepare('UPDATE users SET tz_offset_minutes = ? WHERE id = ?').run(offset, session.user.id);
+          req.user = { ...session.user, tz_offset_minutes: offset };
+        }
         if (session.refreshed) setSessionCookie(ctx, req, res, token, session.expiresAt);
       } else {
         clearSessionCookie(ctx, req, res);

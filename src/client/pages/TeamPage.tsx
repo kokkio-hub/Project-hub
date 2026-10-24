@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Ellipsis, KeyRound, Link2, Mail, Pencil, ShieldCheck, UserCheck, UserPlus, UserX, X } from 'lucide-react';
+import { Ellipsis, Eye, KeyRound, Link2, Mail, Pencil, ShieldCheck, ShieldOff, UserCheck, UserPlus, UserX, X } from 'lucide-react';
 import { USER_ROLE_LABELS, type CreatedUserResponse, type InviteResponse, type User } from '../../shared/types';
 import { errorMessage } from '../api/client';
+import { useAdminDisableTwoFactor } from '../api/account';
 import { useCancelInvite, useSendInvite, useTasks, useUpdateUser, useUsers } from '../api/queries';
 import { useCurrentUser, useDocumentTitle } from '../auth/session';
 import { Avatar } from '../components/Avatar';
@@ -137,7 +138,13 @@ export function TeamPage() {
                   <td>
                     <span className="status-label">
                       {user.role === 'admin' && <ShieldCheck size={15} className="secondary" aria-hidden />}
+                      {user.role === 'guest' && <Eye size={15} className="secondary" aria-hidden />}
                       {USER_ROLE_LABELS[user.role]}
+                      {isAdmin && user.twoFactorEnabled && (
+                        <span className="badge" title="Signs in with a code from an authenticator app">
+                          2FA
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="num">{openCounts.get(user.id) ?? 0}</td>
@@ -201,6 +208,7 @@ function UserActions({
   onInviteLink: (info: InviteLinkInfo) => void;
 }) {
   const update = useUpdateUser();
+  const disable2fa = useAdminDisableTwoFactor();
   const sendInvite = useSendInvite();
   const cancelInvite = useCancelInvite();
   const emailEnabled = useEmailEnabled();
@@ -241,6 +249,20 @@ function UserActions({
     if (!ok) return;
     cancelInvite.mutate(user.id, {
       onSuccess: () => toast.success(`Invitation for ${user.name} revoked`),
+      onError: (e) => toast.error(errorMessage(e)),
+    });
+  };
+
+  const turnOff2fa = async () => {
+    const ok = await confirm({
+      title: `Turn off two-factor sign-in for ${user.name}?`,
+      message: `Only do this when ${first} lost their phone and recovery codes, and you're sure it's really them asking. They can then sign in with just their password, and set it up again.`,
+      confirmLabel: 'Turn off',
+      danger: true,
+    });
+    if (!ok) return;
+    disable2fa.mutate(user.id, {
+      onSuccess: () => toast.success(`Two-factor sign-in is off for ${user.name}`),
       onError: (e) => toast.error(errorMessage(e)),
     });
   };
@@ -304,6 +326,11 @@ function UserActions({
             {user.isActive && (
               <MenuItem icon={<KeyRound size={16} />} onSelect={onResetPassword}>
                 Reset password…
+              </MenuItem>
+            )}
+            {user.twoFactorEnabled && (
+              <MenuItem icon={<ShieldOff size={16} />} onSelect={() => void turnOff2fa()}>
+                Turn off two-factor sign-in…
               </MenuItem>
             )}
             <MenuSeparator />

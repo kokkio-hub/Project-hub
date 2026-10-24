@@ -168,6 +168,13 @@ function UserForm({
                 <span>Also manages people and all projects.</span>
               </div>
             </label>
+            <label className="radio-card">
+              <input type="radio" name="role" checked={form.role === 'guest'} onChange={() => setForm({ ...form, role: 'guest' })} />
+              <div>
+                <strong>Guest</strong>
+                <span>Someone from outside, like a client. Only sees projects you add them to; can read and comment.</span>
+              </div>
+            </label>
           </div>
         </fieldset>
         {!user && (

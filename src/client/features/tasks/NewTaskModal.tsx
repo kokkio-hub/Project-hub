@@ -1,17 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import {
-  TASK_PRIORITIES,
-  TASK_PRIORITY_LABELS,
-  TASK_STATUSES,
-  TASK_STATUS_LABELS,
-  type TaskPriority,
-  type TaskStatus,
-} from '../../../shared/types';
+import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type Recurrence, type TaskPriority, type TaskStatus } from '../../../shared/types';
 import { ApiError } from '../../api/client';
 import { useCreateTask, useProjects, useUsers } from '../../api/queries';
 import { ErrorNotice, Spinner, useToast } from '../../components/Feedback';
 import { Field, UserSelect } from '../../components/Form';
 import { Modal } from '../../components/Modal';
+import { LabelList, LabelPicker } from '../labels/Labels';
+import { assignableUsers, RepeatSelect } from './TaskDrawer';
 
 interface Props {
   open: boolean;
@@ -32,23 +27,29 @@ export function NewTaskModal({ open, onClose, projectId, defaults, onCreated }: 
 
 function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'open'>) {
   const { users } = useUsers();
-  const { data: projects } = useProjects();
+  const { data: projects } = useProjects(false, 'include');
   const create = useCreateTask();
   const toast = useToast();
-  const writable = (projects ?? []).filter((p) => p.status !== 'archived');
+  const writable = (projects ?? []).filter((p) => p.status !== 'archived' && (!p.isTemplate || p.id === projectId));
 
   const [form, setForm] = useState({
     projectId: projectId ?? 0,
     title: '',
     description: '',
-    status: defaults?.status ?? ('todo' as TaskStatus),
+    columnId: 0,
     priority: 'medium' as TaskPriority,
     assigneeId: defaults?.assigneeId ?? (null as number | null),
     startDate: '',
     dueDate: '',
+    labelIds: [] as number[],
+    recurrence: null as Recurrence | null,
   });
   const [addAnother, setAddAnother] = useState(false);
-  const chosenProject = form.projectId || writable[0]?.id || 0;
+  const chosenProject = form.projectId || writable.find((p) => !p.isTemplate)?.id || 0;
+  const project = writable.find((p) => p.id === chosenProject);
+  const columns = [...(project?.columns ?? [])].sort((a, b) => a.position - b.position);
+  const wantedStage: TaskStatus = defaults?.status ?? 'todo';
+  const chosenColumn = columns.some((c) => c.id === form.columnId) ? form.columnId : (columns.find((c) => c.stage === wantedStage) ?? columns[0])?.id ?? 0;
   const fields = create.error instanceof ApiError ? create.error.fields : {};
   // Clear a server error as soon as the form is edited again.
   const errorShown = create.error !== null;
@@ -66,11 +67,13 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
         projectId: chosenProject,
         title: form.title,
         description: form.description,
-        status: form.status,
+        ...(chosenColumn ? { columnId: chosenColumn } : {}),
         priority: form.priority,
         assigneeId: form.assigneeId,
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
+        labelIds: form.labelIds,
+        recurrence: form.recurrence,
       },
       {
         onSuccess: (task) => {
@@ -109,9 +112,9 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
                 id="task-new-project"
                 className="select"
                 value={chosenProject}
-                onChange={(e) => setForm({ ...form, projectId: Number(e.target.value) })}
+                onChange={(e) => setForm({ ...form, projectId: Number(e.target.value), columnId: 0, labelIds: [] })}
               >
-                {writable.map((p) => (
+                {writable.filter((p) => !p.isTemplate).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
@@ -129,16 +132,16 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               placeholder="Optional details"
             />
           </Field>
-          <Field label="Status" htmlFor="task-new-status">
+          <Field label="Column" htmlFor="task-new-column">
             <select
-              id="task-new-status"
+              id="task-new-column"
               className="select"
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}
+              value={chosenColumn}
+              onChange={(e) => setForm({ ...form, columnId: Number(e.target.value) })}
             >
-              {TASK_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {TASK_STATUS_LABELS[s]}
+              {columns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
                 </option>
               ))}
             </select>
@@ -158,7 +161,12 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
             </select>
           </Field>
           <Field label="Assignee" htmlFor="task-new-assignee" error={fields.assigneeId} className="span-2">
-            <UserSelect id="task-new-assignee" users={users} value={form.assigneeId} onChange={(assigneeId) => setForm({ ...form, assigneeId })} />
+            <UserSelect
+              id="task-new-assignee"
+              users={assignableUsers(users, project)}
+              value={form.assigneeId}
+              onChange={(assigneeId) => setForm({ ...form, assigneeId })}
+            />
           </Field>
           <Field label="Start date" htmlFor="task-new-start">
             <input
@@ -179,6 +187,18 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               aria-invalid={Boolean(dateError)}
             />
           </Field>
+          <Field label="Repeats" htmlFor="task-new-repeat" hint={form.recurrence ? 'When it’s done, the next one is created.' : undefined}>
+            <RepeatSelect id="task-new-repeat" className="select" value={form.recurrence} onChange={(recurrence) => setForm({ ...form, recurrence })} />
+          </Field>
+          <div className="field">
+            <span className="field-label">Labels</span>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', minHeight: 36 }}>
+              <LabelList ids={form.labelIds} labels={project?.labels ?? []} size="md" />
+              {project && (
+                <LabelPicker projectId={project.id} labels={project.labels} value={form.labelIds} onChange={(labelIds) => setForm({ ...form, labelIds })} />
+              )}
+            </div>
+          </div>
         </div>
       </div>
       <div className="modal-footer">
