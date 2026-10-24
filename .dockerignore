@@ -1,0 +1,13 @@
+node_modules
+dist
+data
+backups
+coverage
+.env
+.env.*
+!.env.example
+.git
+*.db
+*.db-wal
+*.db-shm
+npm-debug.log*

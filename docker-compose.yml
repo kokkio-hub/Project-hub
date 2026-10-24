@@ -1,0 +1,21 @@
+# Start with:  docker compose up -d        (then open http://<server>:3000)
+# For HTTPS on your own domain, see docker-compose.caddy.yml.
+services:
+  app:
+    build: .
+    image: project-hub:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Fixed inside the container so data always lands in the volume below.
+      PORT: "3000"
+      DATABASE_PATH: /data/project-hub.db
+    volumes:
+      - project-hub-data:/data
+
+volumes:
+  project-hub-data:

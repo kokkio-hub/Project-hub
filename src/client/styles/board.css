@@ -1,0 +1,162 @@
+/* ---------- Kanban board ---------- */
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(264px, 1fr));
+  gap: 14px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  max-height: calc(100vh - 250px);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.12s, background-color 0.12s;
+}
+
+.board-column.is-over {
+  border-color: var(--focus-ring);
+}
+
+.board-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 8px 14px;
+}
+
+.board-column-header h3 {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.board-count {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.board-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 64px;
+  padding: 2px 10px 10px;
+  overflow-y: auto;
+}
+
+.sortable {
+  border-radius: var(--radius);
+  outline: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.sortable:focus-visible .task-card {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.sortable.is-placeholder .task-card {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.task-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.task-card.is-overlay {
+  cursor: grabbing;
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+  /* No rotate/scale here: it would distort the measured rect keyboard dragging relies on. */
+}
+
+.task-card.is-done .task-card-title {
+  color: var(--text-2);
+}
+
+.task-card-title {
+  font-weight: 520;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.task-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+
+.board-empty {
+  padding: 14px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.board-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.board-add:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.quick-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-add .textarea {
+  min-height: 60px;
+  resize: none;
+}
+
+@media (max-width: 900px) {
+  .board {
+    grid-template-columns: repeat(4, 82vw);
+    scroll-snap-type: x mandatory;
+  }
+  .board-column {
+    scroll-snap-align: start;
+    max-height: none;
+  }
+}

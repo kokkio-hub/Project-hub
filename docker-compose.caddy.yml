@@ -1,0 +1,32 @@
+# HTTPS with automatic certificates (Let's Encrypt) via Caddy.
+#
+# 1. Point a DNS record (e.g. projects.yourcompany.com) at this server.
+# 2. Put DOMAIN=projects.yourcompany.com in .env
+# 3. docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# Ports 80 and 443 must be reachable from the internet for the certificate.
+services:
+  app:
+    ports: !reset []           # only reachable through Caddy
+    environment:
+      TRUST_PROXY: "1"         # trust Caddy's X-Forwarded-* headers (secure cookies, real client IPs)
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env to your domain name}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
