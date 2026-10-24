@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { ArrowRight, CircleCheckBig, FolderKanban, Plus } from 'lucide-react';
 import type { DashboardData, User } from '../../shared/types';
 import { useDashboard, useProjects, useUsers } from '../api/queries';
-import { useCurrentUser, useDocumentTitle } from '../auth/session';
+import { canChangeWork, useCurrentUser, useDocumentTitle } from '../auth/session';
 import { Avatar } from '../components/Avatar';
 import { DueChip, Meter } from '../components/Bits';
 import { EmptyState, ErrorNotice, PageLoading } from '../components/Feedback';
@@ -131,6 +131,7 @@ function ViewToggle({ table, onChange }: { table: boolean; onChange: (table: boo
 }
 
 function ProjectsPanel({ data, usersById }: { data: DashboardData; usersById: Map<number, User> }) {
+  const me = useCurrentUser();
   const [creating, setCreating] = useState(false);
   const { data: projects } = useProjects();
   const owners = new Map((projects ?? []).map((p) => [p.id, p.ownerId]));
@@ -149,12 +150,14 @@ function ProjectsPanel({ data, usersById }: { data: DashboardData; usersById: Ma
           icon={<FolderKanban size={22} />}
           title="No active projects"
           action={
-            <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Plus size={16} /> New project
-            </button>
+            canChangeWork(me) && (
+              <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+                <Plus size={16} /> New project
+              </button>
+            )
           }
         >
-          Create a project to start tracking work.
+          {canChangeWork(me) ? 'Create a project to start tracking work.' : 'Projects you’re added to show up here.'}
         </EmptyState>
       ) : (
         <ul className="progress-list">

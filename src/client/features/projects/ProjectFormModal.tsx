@@ -1,24 +1,42 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
-import { COLOR_NAMES, PROJECT_STATUSES, PROJECT_STATUS_LABELS, type ColorName, type Project, type ProjectStatus } from '../../../shared/types';
-import { ApiError } from '../../api/client';
+import { Lock, Users } from 'lucide-react';
+import {
+  COLOR_NAMES,
+  PROJECT_STATUSES,
+  PROJECT_STATUS_LABELS,
+  type ColorName,
+  type Project,
+  type ProjectStatus,
+  type ProjectVisibility,
+  type User,
+} from '../../../shared/types';
+import { ApiError, errorMessage } from '../../api/client';
+import { useSetMembers } from '../../api/board';
 import { useCreateProject, useProjects, useUpdateProject, useUsers } from '../../api/queries';
 import { useCurrentUser } from '../../auth/session';
+import { Avatar } from '../../components/Avatar';
 import { ErrorNotice, Spinner, useToast } from '../../components/Feedback';
 import { ColorPicker, Field, UserSelect } from '../../components/Form';
 import { Modal } from '../../components/Modal';
+import { LabelManager } from '../labels/LabelManager';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   /** Edit this project; omit to create a new one. */
   project?: Project;
+  /** When creating: start from this template. */
+  templateId?: number;
+  /** When creating: make a template instead of a project. */
+  asTemplate?: boolean;
 }
 
-export function ProjectFormModal({ open, onClose, project }: Props) {
+export function ProjectFormModal({ open, onClose, project, templateId, asTemplate }: Props) {
+  const title = project ? (project.isTemplate ? 'Template settings' : 'Project settings') : asTemplate ? 'New template' : 'New project';
   return (
-    <Modal open={open} onClose={onClose} title={project ? 'Project settings' : 'New project'} wide>
-      {open && <ProjectForm project={project} onClose={onClose} />}
+    <Modal open={open} onClose={onClose} title={title} wide>
+      {open && <ProjectForm project={project} onClose={onClose} templateId={templateId} asTemplate={asTemplate} />}
     </Modal>
   );
 }
@@ -31,24 +49,74 @@ function suggestColor(projects: Project[] | undefined): ColorName {
   return best;
 }
 
-function ProjectForm({ project, onClose }: { project?: Project; onClose: () => void }) {
+/** Pick who is on a project: everyone active, guests included. */
+export function MemberPicker({ users, value, onChange, ownerId }: { users: User[]; value: number[]; onChange: (ids: number[]) => void; ownerId: number | null }) {
+  const people = users.filter((u) => u.isActive || value.includes(u.id));
+  if (people.length === 0) return <p className="muted member-empty">No guests yet. Add guests on the Team page first.</p>;
+  return (
+    <ul className="member-picker">
+      {people.map((u) => {
+        const owner = u.id === ownerId;
+        const checked = owner || value.includes(u.id);
+        return (
+          <li key={u.id}>
+            <label className={`member-option ${owner ? 'is-owner' : ''}`}>
+              <input
+                type="checkbox"
+                className="checkbox"
+                checked={checked}
+                disabled={owner}
+                onChange={(e) => onChange(e.target.checked ? [...value, u.id] : value.filter((id) => id !== u.id))}
+              />
+              <Avatar user={u} size="sm" title={null} />
+              <span className="truncate">{u.name}</span>
+              {owner && <span className="badge">Owner</span>}
+              {u.role === 'guest' && <span className="badge">Guest</span>}
+              {u.role === 'admin' && !owner && <span className="muted member-note">Admin</span>}
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function ProjectForm({
+  project,
+  onClose,
+  templateId,
+  asTemplate,
+}: {
+  project?: Project;
+  onClose: () => void;
+  templateId?: number;
+  asTemplate?: boolean;
+}) {
   const me = useCurrentUser();
   const { users } = useUsers();
   const { data: projects } = useProjects();
+  const { data: templates } = useProjects(false, 'only');
   const create = useCreateProject();
   const update = useUpdateProject();
+  const setMembers = useSetMembers(project?.id ?? 0);
   const toast = useToast();
   const navigate = useNavigate();
+  const isTemplate = project?.isTemplate ?? asTemplate ?? false;
 
   const [form, setForm] = useState({
     name: project?.name ?? '',
     description: project?.description ?? '',
     color: project?.color ?? suggestColor(projects),
     status: project?.status ?? ('active' as ProjectStatus),
+    visibility: project?.visibility ?? ('team' as ProjectVisibility),
     ownerId: project ? project.ownerId : me.id,
     startDate: project?.startDate ?? '',
     dueDate: project?.dueDate ?? '',
+    memberIds: project?.memberIds ?? ([] as number[]),
+    fromTemplateId: templateId ?? 0,
+    keepAssignees: false,
   });
+  const template = useMemo(() => templates?.find((t) => t.id === form.fromTemplateId), [templates, form.fromTemplateId]);
   const mutation = project ? update : create;
   const fields = mutation.error instanceof ApiError ? mutation.error.fields : {};
   // Clear a server error as soon as the form is edited again.
@@ -57,7 +125,14 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
   useEffect(() => {
     if (errorShown) resetMutation();
   }, [form]);
+  // Starting from a template: take over its description and colour unless already typed.
+  useEffect(() => {
+    if (!template || project) return;
+    setForm((f) => ({ ...f, description: f.description || template.description, color: template.color }));
+  }, [template, project]);
   const dateError = form.startDate && form.dueDate && form.startDate > form.dueDate ? 'Must be on or after the start date' : undefined;
+  const owners = users.filter((u) => u.role !== 'guest');
+  const membersChanged = project ? [...form.memberIds].sort().join() !== [...project.memberIds].sort().join() : false;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -67,6 +142,7 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
       description: form.description,
       color: form.color,
       status: form.status,
+      visibility: form.visibility,
       ownerId: form.ownerId,
       startDate: form.startDate || null,
       dueDate: form.dueDate || null,
@@ -76,18 +152,31 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
         { id: project.id, patch: input },
         {
           onSuccess: () => {
-            toast.success('Project updated');
+            if (membersChanged) {
+              setMembers.mutate(form.memberIds, {
+                onError: (e) => toast.error(`Saved, but the people couldn't be updated: ${errorMessage(e)}`),
+              });
+            }
+            toast.success(isTemplate ? 'Template updated' : 'Project updated');
             onClose();
           },
         },
       );
     } else {
-      create.mutate(input, {
-        onSuccess: (created) => {
-          onClose();
-          navigate(`/projects/${created.id}`);
+      create.mutate(
+        {
+          ...input,
+          memberIds: form.memberIds,
+          isTemplate,
+          ...(form.fromTemplateId ? { fromTemplateId: form.fromTemplateId, keepAssignees: form.keepAssignees } : {}),
         },
-      });
+        {
+          onSuccess: (created) => {
+            onClose();
+            navigate(`/projects/${created.id}`);
+          },
+        },
+      );
     }
   };
 
@@ -100,13 +189,30 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
               <ErrorNotice error={mutation.error} />
             </div>
           )}
+          {!project && !isTemplate && (templates?.length ?? 0) > 0 && (
+            <Field label="Start from" htmlFor="project-template" className="span-2" hint={template ? 'Columns, labels and tasks are copied. Dates move with the start date.' : undefined}>
+              <select
+                id="project-template"
+                className="select"
+                value={form.fromTemplateId}
+                onChange={(e) => setForm({ ...form, fromTemplateId: Number(e.target.value) })}
+              >
+                <option value={0}>A blank project</option>
+                {templates!.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    Template: {t.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Name" htmlFor="project-name" error={fields.name} className="span-2">
             <input
               id="project-name"
               className="input"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. Website redesign"
+              placeholder={isTemplate ? 'e.g. Client website' : 'e.g. Website redesign'}
               autoFocus
               maxLength={120}
             />
@@ -130,7 +236,7 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
             />
           </Field>
-          <Field label="Due date" htmlFor="project-due" error={dateError ?? fields.dueDate}>
+          <Field label="Due date" htmlFor="project-due" error={dateError ?? fields.dueDate} hint={template && !form.dueDate ? 'Leave empty to follow the template.' : undefined}>
             <input
               id="project-due"
               type="date"
@@ -143,13 +249,13 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
           <Field label="Owner" htmlFor="project-owner" error={fields.ownerId} hint="The owner and admins can change settings.">
             <UserSelect
               id="project-owner"
-              users={users}
+              users={owners}
               value={form.ownerId}
               onChange={(ownerId) => setForm({ ...form, ownerId })}
               unassignedLabel="No owner"
             />
           </Field>
-          {project ? (
+          {project && !isTemplate ? (
             <Field label="Status" htmlFor="project-status">
               <select
                 id="project-status"
@@ -167,9 +273,72 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
           ) : (
             <span />
           )}
+          {template && (
+            <label className="row span-2" style={{ gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                className="checkbox"
+                checked={form.keepAssignees}
+                onChange={(e) => setForm({ ...form, keepAssignees: e.target.checked })}
+              />
+              Keep who the template’s tasks are assigned to
+            </label>
+          )}
           <Field label="Colour" className="span-2">
             <ColorPicker label="Project colour" value={form.color} onChange={(color) => setForm({ ...form, color })} />
           </Field>
+
+          <fieldset className="plain-fieldset field span-2">
+            <legend className="field-label">Who can see it</legend>
+            <div className="radio-cards">
+              <label className="radio-card">
+                <input type="radio" name="visibility" checked={form.visibility === 'team'} onChange={() => setForm({ ...form, visibility: 'team' })} />
+                <div>
+                  <strong>
+                    <Users size={14} aria-hidden /> The whole team
+                  </strong>
+                  <span>Every member can see and work on it. Guests only if you add them below.</span>
+                </div>
+              </label>
+              <label className="radio-card">
+                <input
+                  type="radio"
+                  name="visibility"
+                  checked={form.visibility === 'private'}
+                  onChange={() => setForm({ ...form, visibility: 'private' })}
+                />
+                <div>
+                  <strong>
+                    <Lock size={14} aria-hidden /> Only the people added
+                  </strong>
+                  <span>Private: the owner, the people below and admins.</span>
+                </div>
+              </label>
+            </div>
+          </fieldset>
+          <Field
+            label={form.visibility === 'private' ? 'People on this project' : 'Guests and extra people'}
+            className="span-2"
+            hint={
+              form.visibility === 'private'
+                ? 'Only these people (and admins) can open the project.'
+                : 'Members already see team projects. Add guests here to share it with them.'
+            }
+          >
+            <MemberPicker
+              users={form.visibility === 'private' ? users : users.filter((u) => u.role === 'guest' || form.memberIds.includes(u.id))}
+              value={form.memberIds}
+              onChange={(memberIds) => setForm({ ...form, memberIds })}
+              ownerId={form.ownerId}
+            />
+          </Field>
+
+          {project && (
+            <div className="span-2">
+              <span className="field-label">Labels</span>
+              <LabelManager project={project} />
+            </div>
+          )}
         </div>
       </div>
       <div className="modal-footer">
@@ -178,7 +347,7 @@ function ProjectForm({ project, onClose }: { project?: Project; onClose: () => v
         </button>
         <button type="submit" className="btn btn-primary" disabled={mutation.isPending || !form.name.trim()}>
           {mutation.isPending && <Spinner size={16} />}
-          {project ? 'Save changes' : 'Create project'}
+          {project ? 'Save changes' : isTemplate ? 'Create template' : 'Create project'}
         </button>
       </div>
     </form>

@@ -144,6 +144,7 @@ export function authRouter(ctx: AppContext): Router {
       setupRequired: countUsers(db) === 0,
       emailEnabled: mailer.enabled,
       passwordResetEnabled: passwordResetEnabled(),
+      uploadLimitBytes: config.maxUploadBytes,
     };
     res.json(body);
   });

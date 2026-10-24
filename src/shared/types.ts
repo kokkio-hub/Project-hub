@@ -438,6 +438,8 @@ export interface AppStatus {
   emailEnabled: boolean;
   /** People can reset a forgotten password themselves (needs email and APP_URL). */
   passwordResetEnabled: boolean;
+  /** Largest file that can be attached, in bytes. */
+  uploadLimitBytes: number;
 }
 
 /** Answer to a sign-in with the right password when the account uses two-factor sign-in. */

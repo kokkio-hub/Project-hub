@@ -15,7 +15,7 @@ import { useAppName } from '../auth/session';
 import { ErrorNotice, Spinner, useToast } from '../components/Feedback';
 import { Field, PasswordInput } from '../components/Form';
 import { firstName } from '../lib/format';
-import { AuthCard, AuthIcon, SubmitButton } from './AuthPages';
+import { AuthCard, AuthIcon, SubmitButton, TwoFactorStep } from './AuthPages';
 
 /*
  * The pages behind the links in invitation and password reset emails. The
@@ -313,6 +313,7 @@ function ResetPasswordForm({
   const toast = useToast();
   const pw = useNewPassword();
   const fields = complete.error instanceof ApiError ? complete.error.fields : {};
+  const [challenge, setChallenge] = useState<string | null>(null);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -320,13 +321,32 @@ function ResetPasswordForm({
     complete.mutate(
       { token, password: pw.password },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if ('twoFactorRequired' in result) {
+            setChallenge(result.challenge);
+            return;
+          }
           navigate('/', { replace: true });
           toast.success("Your new password is saved and you're signed in.");
         },
       },
     );
   };
+
+  if (challenge) {
+    return (
+      <AuthCard appName={appName}>
+        <TwoFactorStep
+          challenge={challenge}
+          onBack={() => navigate('/', { replace: true })}
+          onDone={() => {
+            navigate('/', { replace: true });
+            toast.success("Your new password is saved and you're signed in.");
+          }}
+        />
+      </AuthCard>
+    );
+  }
 
   const edited = () => {
     if (complete.error) complete.reset();

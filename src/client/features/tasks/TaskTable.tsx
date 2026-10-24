@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { localToday } from '../../../shared/dates';
-import { TASK_PRIORITIES, TASK_STATUSES, type Project, type Task, type User } from '../../../shared/types';
+import { TASK_PRIORITIES, TASK_STATUSES, TASK_STATUS_LABELS, type BoardColumn, type Label, type Project, type Task, type User } from '../../../shared/types';
 import { Person } from '../../components/Avatar';
 import { DueChip } from '../../components/Bits';
-import { PriorityLabel, ProjectDot, StatusLabel } from '../../components/Icons';
+import { PriorityLabel, ProjectDot, StatusIcon } from '../../components/Icons';
 import { formatDate } from '../../lib/format';
+import { LabelList } from '../labels/Labels';
 
 type SortKey = 'title' | 'status' | 'priority' | 'assignee' | 'startDate' | 'dueDate' | 'project';
 
@@ -13,11 +14,16 @@ interface Props {
   tasks: Task[];
   usersById: Map<number, User>;
   projectsById?: Map<number, Project>;
+  /** The project's columns and labels, when all tasks come from one project. */
+  columns?: BoardColumn[];
+  labels?: Label[];
   onOpenTask: (id: number) => void;
 }
 
 /** Sortable table of tasks: the list view, and the accessible table twin of the board and timeline. */
-export function TaskTable({ tasks, usersById, projectsById, onOpenTask }: Props) {
+export function TaskTable({ tasks, usersById, projectsById, columns, labels, onOpenTask }: Props) {
+  const columnOf = (t: Task) => (columns ?? projectsById?.get(t.projectId)?.columns ?? []).find((c) => c.id === t.columnId);
+  const labelsOf = (t: Task) => labels ?? projectsById?.get(t.projectId)?.labels ?? [];
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'dueDate', dir: 1 });
   const today = localToday();
 
@@ -28,7 +34,7 @@ export function TaskTable({ tasks, usersById, projectsById, onOpenTask }: Props)
         case 'title':
           return t.title.toLowerCase();
         case 'status':
-          return TASK_STATUSES.indexOf(t.status);
+          return TASK_STATUSES.indexOf(t.status) * 1000 + (columnOf(t)?.position ?? 0);
         case 'priority':
           return -TASK_PRIORITIES.indexOf(t.priority);
         case 'assignee':
@@ -74,7 +80,7 @@ export function TaskTable({ tasks, usersById, projectsById, onOpenTask }: Props)
           <tr>
             {header('title', 'Task')}
             {projectsById && header('project', 'Project')}
-            {header('status', 'Status')}
+            {header('status', 'Column')}
             {header('priority', 'Priority')}
             {header('assignee', 'Assignee')}
             {header('startDate', 'Start')}
@@ -98,6 +104,7 @@ export function TaskTable({ tasks, usersById, projectsById, onOpenTask }: Props)
                   <span className={`truncate ${t.status === 'done' ? 'secondary' : ''}`} style={{ display: 'block', fontWeight: 520 }}>
                     {t.title}
                   </span>
+                  {t.labelIds.length > 0 && <LabelList ids={t.labelIds} labels={labelsOf(t)} />}
                 </td>
                 {projectsById && (
                   <td>
@@ -110,7 +117,10 @@ export function TaskTable({ tasks, usersById, projectsById, onOpenTask }: Props)
                   </td>
                 )}
                 <td>
-                  <StatusLabel status={t.status} />
+                  <span className="status-label">
+                    <StatusIcon status={t.status} />
+                    {columnOf(t)?.name ?? TASK_STATUS_LABELS[t.status]}
+                  </span>
                 </td>
                 <td>
                   <PriorityLabel priority={t.priority} />

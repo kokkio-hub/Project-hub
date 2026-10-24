@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
   ChartGantt,
@@ -11,16 +11,22 @@ import {
   Monitor,
   Moon,
   Plus,
+  Search,
   Settings,
+  SlidersHorizontal,
   SquareKanban,
   Sun,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { USER_ROLE_LABELS } from '../../shared/types';
 import { useLiveUpdates } from '../api/live';
 import { useLogout, useProjects, useTasks } from '../api/queries';
-import { useAppName, useCurrentUser } from '../auth/session';
+import { canChangeWork, useAppName, useCurrentUser } from '../auth/session';
+import { NotificationsButton } from '../features/notifications/NotificationsButton';
 import { ProjectFormModal } from '../features/projects/ProjectFormModal';
+import { CommandPalette, usePaletteShortcut } from '../features/search/CommandPalette';
+import { NewTaskModal } from '../features/tasks/NewTaskModal';
 import { TaskDrawer } from '../features/tasks/TaskDrawer';
 import { useTheme, type ThemePreference } from '../lib/theme';
 import { Avatar } from './Avatar';
@@ -32,6 +38,10 @@ export function AppLayout() {
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  usePaletteShortcut(openPalette);
   const [searchParams, setSearchParams] = useSearchParams();
   const taskParam = Number(searchParams.get('task'));
   const taskId = Number.isInteger(taskParam) && taskParam > 0 ? taskParam : null;
@@ -49,7 +59,7 @@ export function AppLayout() {
 
   return (
     <div className={`app ${navOpen ? 'nav-open' : ''}`}>
-      <Sidebar onNewProject={() => setNewProjectOpen(true)} />
+      <Sidebar onNewProject={() => setNewProjectOpen(true)} onSearch={openPalette} />
       <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} aria-hidden />
       <div className="main">
         <header className="topbar">
@@ -59,31 +69,55 @@ export function AppLayout() {
           <span className="brand-mark" aria-hidden style={{ width: 24, height: 24, borderRadius: 6 }}>
             <SquareKanban size={14} />
           </span>
-          {appName}
+          <span className="truncate">{appName}</span>
+          <span className="spacer" />
+          <button type="button" className="icon-btn" onClick={openPalette} aria-label="Search">
+            <Search size={18} />
+          </button>
+          <NotificationsButton />
         </header>
         <Outlet />
       </div>
       <TaskDrawer taskId={taskId} onClose={closeTask} />
       <ProjectFormModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)} />
+      <NewTaskModal open={newTaskOpen} onClose={() => setNewTaskOpen(false)} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNewTask={() => setNewTaskOpen(true)}
+        onNewProject={() => setNewProjectOpen(true)}
+      />
     </div>
   );
 }
 
-function Sidebar({ onNewProject }: { onNewProject: () => void }) {
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+
+function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearch: () => void }) {
   const appName = useAppName();
   const user = useCurrentUser();
+  const canCreate = canChangeWork(user);
   const { data: projects } = useProjects();
   const { data: myOpenTasks } = useTasks({ assigneeId: 'me', status: 'todo,in_progress,review' });
   const visibleProjects = (projects ?? []).filter((p) => p.status === 'active' || p.status === 'on_hold');
 
   return (
     <aside className="sidebar" aria-label="Main navigation">
-      <NavLink to="/" className="sidebar-brand">
-        <span className="brand-mark" aria-hidden>
-          <SquareKanban size={17} />
-        </span>
-        <span className="truncate">{appName}</span>
-      </NavLink>
+      <div className="sidebar-top">
+        <NavLink to="/" className="sidebar-brand">
+          <span className="brand-mark" aria-hidden>
+            <SquareKanban size={17} />
+          </span>
+          <span className="truncate">{appName}</span>
+        </NavLink>
+        <NotificationsButton />
+      </div>
+
+      <button type="button" className="sidebar-search" onClick={onSearch}>
+        <Search size={15} aria-hidden />
+        <span>Search</span>
+        <span className="kbd">{isMac ? '⌘' : 'Ctrl'} K</span>
+      </button>
 
       <nav className="sidebar-nav">
         <NavLink to="/" end className="nav-link">
@@ -110,9 +144,11 @@ function Sidebar({ onNewProject }: { onNewProject: () => void }) {
 
       <div className="sidebar-section">
         Projects
-        <button type="button" className="icon-btn icon-btn-sm" onClick={onNewProject} aria-label="New project" title="New project">
-          <Plus size={15} />
-        </button>
+        {canCreate && (
+          <button type="button" className="icon-btn icon-btn-sm" onClick={onNewProject} aria-label="New project" title="New project">
+            <Plus size={15} />
+          </button>
+        )}
       </div>
       <nav className="sidebar-projects" aria-label="Projects">
         {visibleProjects.map((project) => (
@@ -121,12 +157,25 @@ function Sidebar({ onNewProject }: { onNewProject: () => void }) {
             <span className="truncate">{project.name}</span>
           </NavLink>
         ))}
-        {projects && visibleProjects.length === 0 && (
+        {projects && visibleProjects.length === 0 && canCreate && (
           <button type="button" className="nav-link" onClick={onNewProject} style={{ border: 'none', background: 'none', width: '100%' }}>
             <Plus size={15} aria-hidden /> Create a project
           </button>
         )}
       </nav>
+
+      {user.role !== 'guest' && (
+        <nav className="sidebar-nav sidebar-extra" aria-label="More">
+          <NavLink to="/trash" className="nav-link">
+            <Trash2 size={16} aria-hidden /> Trash
+          </NavLink>
+          {user.role === 'admin' && (
+            <NavLink to="/settings" className="nav-link">
+              <SlidersHorizontal size={16} aria-hidden /> Workspace settings
+            </NavLink>
+          )}
+        </nav>
+      )}
 
       <div className="sidebar-footer">
         <UserMenu user={user} />

@@ -15,8 +15,10 @@ import { MyTasksPage } from './pages/MyTasksPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { TeamPage } from './pages/TeamPage';
 import { TimelinePage } from './pages/TimelinePage';
+import { TrashPage } from './pages/TrashPage';
 
 function FullScreenError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
@@ -61,6 +63,8 @@ export function App() {
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="team" element={<TeamPage />} />
               <Route path="account" element={<AccountPage />} />
+              <Route path="trash" element={<TrashPage />} />
+              <Route path="settings" element={<SettingsPage />} />
               <Route path="login" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>

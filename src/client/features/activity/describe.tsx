@@ -12,6 +12,9 @@ const FIELD_LABELS: Record<string, string> = {
   color: 'colour',
   status: 'status',
   ownerId: 'owner',
+  visibility: 'visibility',
+  labelIds: 'labels',
+  recurrence: 'repeat',
 };
 
 function joinWords(words: string[]): string {
@@ -38,6 +41,8 @@ export function describeActivity(
       return <>{who} created the project {project}</>;
     case 'project.deleted':
       return <>{who} deleted the project {project}</>;
+    case 'project.restored':
+      return <>{who} restored the project {project}</>;
     case 'project.updated': {
       const to = item.data.to as ProjectStatus | undefined;
       if (to && PROJECT_STATUS_LABELS[to]) {
@@ -58,9 +63,18 @@ export function describeActivity(
       return <>{who} created {task}</>;
     case 'task.deleted':
       return <>{who} deleted {task}</>;
+    case 'task.restored':
+      return <>{who} restored {task}</>;
+    case 'task.attachment':
+      return (
+        <>
+          {who} attached <strong>{item.data.filename ?? 'a file'}</strong> to {task}
+        </>
+      );
     case 'task.status': {
       const to = item.data.to as TaskStatus | undefined;
       if (to === 'done') return <>{who} completed {task}</>;
+      if (item.data.from === to) return <>{who} moved {task} to another column</>;
       if (item.data.from === 'done') {
         return (
           <>

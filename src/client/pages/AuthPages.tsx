@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
-import { MailCheck, SquareKanban } from 'lucide-react';
+import { MailCheck, ShieldCheck, SquareKanban } from 'lucide-react';
 import { PASSWORD_MIN_LENGTH, RESET_LINK_MINUTES, type User } from '../../shared/types';
 import { ApiError, errorMessage } from '../api/client';
-import { useChangePassword, useLogin, useLogout, useRequestPasswordReset, useSetup } from '../api/queries';
+import { useChangePassword, useLogin, useLogout, useRequestPasswordReset, useSetup, useVerifyLogin } from '../api/queries';
 import { ErrorNotice, Spinner } from '../components/Feedback';
 import { Field, PasswordInput } from '../components/Form';
 
@@ -41,12 +41,86 @@ export function AuthIcon({ children, tone = 'accent' }: { children: ReactNode; t
   );
 }
 
+/** Second sign-in step for accounts with two-factor sign-in. */
+export function TwoFactorStep({ challenge, onBack, onDone }: { challenge: string; onBack: () => void; onDone?: () => void }) {
+  const verify = useVerifyLogin();
+  const [code, setCode] = useState('');
+  const [recovery, setRecovery] = useState(false);
+  const fields = verify.error instanceof ApiError ? verify.error.fields : {};
+  const expired = verify.error instanceof ApiError && verify.error.status === 410;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    verify.mutate({ challenge, code }, { onSuccess: () => onDone?.() });
+  };
+
+  return (
+    <>
+      <AuthIcon>
+        <ShieldCheck size={22} />
+      </AuthIcon>
+      <h1>Enter your code</h1>
+      <p className="lead">
+        {recovery
+          ? 'Type one of the recovery codes you saved when you set up two-factor sign-in.'
+          : 'Open your authenticator app and type the 6-digit code it shows for this account.'}
+      </p>
+      <form onSubmit={submit} noValidate>
+        {verify.error && !fields.code && <ErrorNotice error={verify.error} />}
+        <Field label={recovery ? 'Recovery code' : 'Code'} htmlFor="login-code" error={fields.code}>
+          <input
+            id="login-code"
+            className="input mono code-input"
+            inputMode={recovery ? 'text' : 'numeric'}
+            autoComplete="one-time-code"
+            maxLength={recovery ? 20 : 7}
+            value={code}
+            onChange={(e) => {
+              setCode(recovery ? e.target.value : e.target.value.replace(/[^\d ]/g, ''));
+              if (verify.error) verify.reset();
+            }}
+            autoFocus
+            disabled={expired}
+          />
+        </Field>
+        {expired ? (
+          <button type="button" className="btn btn-primary btn-lg btn-block" onClick={onBack}>
+            Sign in again
+          </button>
+        ) : (
+          <SubmitButton pending={verify.isPending} disabled={!code.trim()}>
+            Verify and sign in
+          </SubmitButton>
+        )}
+      </form>
+      <p className="auth-footnote">
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            setRecovery((r) => !r);
+            setCode('');
+            verify.reset();
+          }}
+        >
+          {recovery ? 'Use the code from my app instead' : 'Lost your phone? Use a recovery code'}
+        </button>
+        {' · '}
+        <button type="button" className="link-button" onClick={onBack}>
+          Back
+        </button>
+      </p>
+    </>
+  );
+}
+
 export function LoginPage({ appName, passwordResetEnabled }: { appName: string; passwordResetEnabled: boolean }) {
   const login = useLogin();
   const [searchParams, setSearchParams] = useSearchParams();
   const forgot = passwordResetEnabled && searchParams.has('forgot');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [challenge, setChallenge] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = `${forgot ? 'Reset password' : 'Sign in'} · ${appName}`;
@@ -63,8 +137,30 @@ export function LoginPage({ appName, passwordResetEnabled }: { appName: string; 
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    login.mutate({ email, password });
+    login.mutate(
+      { email, password },
+      {
+        onSuccess: (result) => {
+          if ('twoFactorRequired' in result) setChallenge(result.challenge);
+        },
+      },
+    );
   };
+
+  if (challenge) {
+    return (
+      <AuthCard appName={appName}>
+        <TwoFactorStep
+          challenge={challenge}
+          onBack={() => {
+            setChallenge(null);
+            setPassword('');
+            login.reset();
+          }}
+        />
+      </AuthCard>
+    );
+  }
 
   if (forgot) {
     return (

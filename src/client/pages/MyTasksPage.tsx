@@ -8,6 +8,7 @@ import { useCurrentUser, useDocumentTitle } from '../auth/session';
 import { DueChip } from '../components/Bits';
 import { EmptyState, ErrorNotice, PageLoading, useToast } from '../components/Feedback';
 import { PriorityIcon, ProjectDot, StatusIcon } from '../components/Icons';
+import { nextCopyMessage } from '../features/board/KanbanBoard';
 import { NewTaskModal } from '../features/tasks/NewTaskModal';
 import { localDateOf } from '../lib/format';
 import { useOpenTask } from '../lib/hooks';
@@ -131,8 +132,8 @@ function MyTaskRow({ task, project, today, onOpen }: { task: Task; project: Proj
           update.mutate(
             { id: task.id, patch: { status: done ? 'todo' : 'done' } },
             {
-              onSuccess: () => {
-                if (!done) toast.success(`Completed “${task.title}”`);
+              onSuccess: (result) => {
+                if (!done) toast.success(result.next ? `Completed. ${nextCopyMessage(result.next)}` : `Completed “${task.title}”`);
               },
               onError: (e) => toast.error(errorMessage(e)),
             },
