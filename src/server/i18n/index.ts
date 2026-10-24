@@ -88,8 +88,8 @@ export function translateMessage(message: string, lang: Lang): string {
     });
     return tr.t(pattern.key, params);
   }
-  // Validation messages look like "field: message".
-  const field = /^([\w.]+): (.+)$/s.exec(message);
+  // Validation messages look like "field: message" (or "Custom field name: message").
+  const field = /^([^:\n]{1,60}?): (.+)$/s.exec(message);
   if (field) {
     const rest = translateMessage(field[2]!, lang);
     if (rest !== field[2]) return `${field[1]}: ${rest}`;

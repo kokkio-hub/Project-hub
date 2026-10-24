@@ -1,4 +1,4 @@
-import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type Project, type Task } from '../../shared/types.js';
+import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type CustomField, type Project, type Task } from '../../shared/types.js';
 import type { Translator } from '../../shared/i18n/core.js';
 
 /**
@@ -19,6 +19,14 @@ export function toCsv(header: string[], rows: (string | number | null | undefine
   return `﻿${lines.join('\r\n')}\r\n`;
 }
 
+/** A custom field value as text a person can read (a dropdown's choice name, Yes for a ticked box). */
+export function fieldText(field: CustomField, value: string | undefined, tr: Translator): string {
+  if (value === undefined || value === '') return '';
+  if (field.type === 'select') return field.options.find((o) => o.id === value)?.name ?? '';
+  if (field.type === 'checkbox') return value === 'true' ? tr.t('Yes') : '';
+  return value;
+}
+
 /** Tasks as a spreadsheet, with headers and labels in the viewer's language. */
 export function tasksCsv(input: {
   tasks: Task[];
@@ -29,6 +37,9 @@ export function tasksCsv(input: {
   tr: Translator;
 }): string {
   const { tasks, projects, userNames, includeProject, tr } = input;
+  // One project: a column per custom field. Several: all of them in one column.
+  const single = includeProject ? undefined : [...projects.values()][0];
+  const fields = single?.fields ?? [];
   const header = [
     tr.t('ID'),
     ...(includeProject ? [tr.t('Project')] : []),
@@ -43,6 +54,9 @@ export function tasksCsv(input: {
     tr.t('Completed'),
     tr.t('Created'),
     tr.t('Checklist'),
+    tr.t('Parent task'),
+    tr.t('Milestone'),
+    ...(includeProject ? [tr.t('Custom fields')] : fields.map((f) => f.name)),
     tr.t('Description'),
   ];
   const rows = tasks.map((t) => {
@@ -65,6 +79,17 @@ export function tasksCsv(input: {
       t.completedAt?.slice(0, 10),
       t.createdAt.slice(0, 10),
       t.checklistTotal > 0 ? `${t.checklistDone}/${t.checklistTotal}` : '',
+      t.parentId,
+      t.milestoneId ? (p?.milestones.find((m) => m.id === t.milestoneId)?.name ?? '') : '',
+      ...(includeProject
+        ? [
+            (p?.fields ?? [])
+              .map((f) => [f.name, fieldText(f, t.fieldValues[f.id], tr)] as const)
+              .filter(([, v]) => v !== '')
+              .map(([n, v]) => `${n}: ${v}`)
+              .join('; '),
+          ]
+        : fields.map((f) => fieldText(f, t.fieldValues[f.id], tr))),
       t.description,
     ];
   });

@@ -23,6 +23,17 @@ export interface CalendarTask {
   recurrence: { freq: 'daily' | 'weekly' | 'monthly' | 'yearly'; interval: number } | null;
 }
 
+export interface CalendarMilestone {
+  id: number;
+  name: string;
+  date: string;
+  description: string;
+  reached: boolean;
+  updatedAt: string;
+  projectId: number;
+  projectName: string;
+}
+
 /** Escapes text values (RFC 5545 section 3.3.11). */
 export function icsText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
@@ -54,7 +65,7 @@ const compactDate = (date: string) => date.replace(/-/g, '');
 const stamp = (iso: string) => iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
 export function buildCalendar(
-  input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[] },
+  input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[]; milestones?: CalendarMilestone[] },
   tr: Translator = english,
 ): string {
   const lines = [
@@ -94,6 +105,27 @@ export function buildCalendar(
       `SUMMARY:${icsText(`${done ? '✓ ' : ''}${task.title}`)}`,
       `DESCRIPTION:${icsText(details)}`,
       `CATEGORIES:${icsText(task.projectName)}`,
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+    );
+    if (url) lines.push(`URL:${url}`);
+    lines.push('END:VEVENT');
+  }
+  for (const m of input.milestones ?? []) {
+    const url = input.appUrl ? `${input.appUrl}/projects/${m.projectId}?view=timeline` : null;
+    const details = [tr.t('Milestone in {project}', { project: m.projectName }), m.description.trim() ? `\n${m.description.trim().slice(0, 2000)}` : null, url ? `\n${url}` : null]
+      .filter(Boolean)
+      .join('\n');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:milestone-${m.id}@${input.host}`,
+      `DTSTAMP:${stamp(m.updatedAt)}`,
+      `LAST-MODIFIED:${stamp(m.updatedAt)}`,
+      `DTSTART;VALUE=DATE:${compactDate(m.date)}`,
+      `DTEND;VALUE=DATE:${compactDate(addDays(m.date, 1))}`,
+      `SUMMARY:${icsText(`${m.reached ? '✓ ' : '◆ '}${m.name}`)}`,
+      `DESCRIPTION:${icsText(details)}`,
+      `CATEGORIES:${icsText(m.projectName)}`,
       'TRANSP:TRANSPARENT',
       'STATUS:CONFIRMED',
     );

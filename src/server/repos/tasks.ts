@@ -25,6 +25,8 @@ export interface TaskRow {
   recurrence: RecurrenceFrequency | null;
   recurrence_interval: number | null;
   next_task_id: number | null;
+  parent_id: number | null;
+  milestone_id: number | null;
   comment_count: number;
   checklist_total: number;
   checklist_done: number;
@@ -32,6 +34,9 @@ export interface TaskRow {
   label_ids: string | null;
   blocked_by_ids: string | null;
   open_blockers: number;
+  subtask_total: number;
+  subtask_done: number;
+  field_values: string | null;
 }
 
 /** Blockers only count while they exist outside the trash. */
@@ -47,7 +52,12 @@ const SELECT_TASK = `
          (SELECT group_concat(d.blocker_id) FROM task_dependencies d JOIN tasks b ON b.id = d.blocker_id
            WHERE d.blocked_id = t.id AND ${LIVE_BLOCKER})                                   AS blocked_by_ids,
          (SELECT COUNT(*) FROM task_dependencies d JOIN tasks b ON b.id = d.blocker_id
-           WHERE d.blocked_id = t.id AND b.status != 'done' AND ${LIVE_BLOCKER})            AS open_blockers
+           WHERE d.blocked_id = t.id AND b.status != 'done' AND ${LIVE_BLOCKER})            AS open_blockers,
+         (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.deleted_at IS NULL)  AS subtask_total,
+         (SELECT COUNT(*) FROM tasks s WHERE s.parent_id = t.id AND s.deleted_at IS NULL
+            AND s.status = 'done')                                                          AS subtask_done,
+         (SELECT json_group_object(fv.field_id, fv.value) FROM task_field_values fv
+           WHERE fv.task_id = t.id)                                                         AS field_values
     FROM tasks t`;
 
 const BOARD_ORDER = `t.project_id, (SELECT pc.position FROM project_columns pc WHERE pc.id = t.column_id), t.position, t.id`;
@@ -59,6 +69,15 @@ function idList(value: string | null): number[] {
     .map(Number)
     .filter((n) => Number.isInteger(n))
     .sort((a, b) => a - b);
+}
+
+function fieldValuesOf(json: string | null): Record<string, string> {
+  if (!json) return {};
+  try {
+    return JSON.parse(json) as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 export function recurrenceOf(row: Pick<TaskRow, 'recurrence' | 'recurrence_interval'>): Recurrence | null {
@@ -90,6 +109,11 @@ export function toTask(row: TaskRow): Task {
     blockedByIds: idList(row.blocked_by_ids),
     openBlockerCount: row.open_blockers,
     recurrence: recurrenceOf(row),
+    parentId: row.parent_id,
+    subtaskTotal: row.subtask_total,
+    subtaskDone: row.subtask_done,
+    milestoneId: row.milestone_id,
+    fieldValues: fieldValuesOf(row.field_values),
   };
 }
 
@@ -186,6 +210,8 @@ export interface TaskInput {
   dueDate: string | null;
   createdBy: number | null;
   recurrence?: Recurrence | null;
+  parentId?: number | null;
+  milestoneId?: number | null;
 }
 
 /** Adds a task at the bottom of `column`. */
@@ -194,9 +220,10 @@ export function insertTask(db: DB, input: TaskInput, column: ColumnRow): Task {
   const result = db
     .prepare(
       `INSERT INTO tasks (project_id, column_id, title, description, status, priority, assignee_id, start_date, due_date,
-                          position, created_by, created_at, updated_at, completed_at, recurrence, recurrence_interval)
+                          position, created_by, created_at, updated_at, completed_at, recurrence, recurrence_interval,
+                          parent_id, milestone_id)
        VALUES (@projectId, @columnId, @title, @description, @status, @priority, @assigneeId, @startDate, @dueDate,
-               @position, @createdBy, @now, @now, @completedAt, @recurrence, @recurrenceInterval)`,
+               @position, @createdBy, @now, @now, @completedAt, @recurrence, @recurrenceInterval, @parentId, @milestoneId)`,
     )
     .run({
       projectId: input.projectId,
@@ -214,6 +241,8 @@ export function insertTask(db: DB, input: TaskInput, column: ColumnRow): Task {
       completedAt: column.stage === 'done' ? now : null,
       recurrence: input.recurrence?.freq ?? null,
       recurrenceInterval: input.recurrence ? input.recurrence.interval : null,
+      parentId: input.parentId ?? null,
+      milestoneId: input.milestoneId ?? null,
     });
   return getTask(db, Number(result.lastInsertRowid))!;
 }
@@ -227,6 +256,8 @@ export interface TaskPatch {
   startDate?: string | null;
   dueDate?: string | null;
   recurrence?: Recurrence | null;
+  parentId?: number | null;
+  milestoneId?: number | null;
 }
 
 const TASK_COLUMNS: Record<Exclude<keyof TaskPatch, 'recurrence'>, string> = {
@@ -237,6 +268,8 @@ const TASK_COLUMNS: Record<Exclude<keyof TaskPatch, 'recurrence'>, string> = {
   assigneeId: 'assignee_id',
   startDate: 'start_date',
   dueDate: 'due_date',
+  parentId: 'parent_id',
+  milestoneId: 'milestone_id',
 };
 
 /**
@@ -309,18 +342,45 @@ export function moveTask(db: DB, current: TaskRow, column: ColumnRow, afterId: n
   return getTask(db, current.id)!;
 }
 
-/** Moves a task to the trash. */
+/** Moves a task, and its subtasks, to the trash. They come back together. */
 export function trashTask(db: DB, id: number, userId: number): void {
-  db.prepare('UPDATE tasks SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(nowIso(), userId, id);
+  const now = nowIso();
+  db.prepare('UPDATE tasks SET deleted_at = ?, deleted_by = ? WHERE id = ?').run(now, userId, id);
+  db.prepare('UPDATE tasks SET deleted_at = ?, deleted_by = ? WHERE parent_id = ? AND deleted_at IS NULL').run(now, userId, id);
 }
 
-/** Brings a task back from the trash, at the bottom of its column (or a column of the same stage). */
+/** The subtasks of a task, in board order (outside the trash). */
+export function listSubtaskRows(db: DB, parentId: number): TaskRow[] {
+  return db
+    .prepare(`${SELECT_TASK} WHERE t.parent_id = ? AND t.deleted_at IS NULL ORDER BY (SELECT pc.position FROM project_columns pc WHERE pc.id = t.column_id), t.position, t.id`)
+    .all(parentId) as TaskRow[];
+}
+
+export function countSubtasks(db: DB, parentId: number): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE parent_id = ? AND deleted_at IS NULL').get(parentId) as { n: number }).n;
+}
+
+/**
+ * Brings a task back from the trash, at the bottom of its column (or a column of
+ * the same stage). Subtasks deleted with it come back too. A subtask whose parent
+ * is still in the trash comes back as a task of its own.
+ */
 export function restoreTask(db: DB, current: TaskRow): Task {
-  const column =
-    (current.column_id !== null ? getColumnRow(db, current.column_id) : undefined) ?? columnForStage(db, current.project_id, current.status);
-  db.prepare(
-    'UPDATE tasks SET deleted_at = NULL, deleted_by = NULL, column_id = ?, status = ?, position = ?, updated_at = ? WHERE id = ?',
-  ).run(column.id, column.stage, nextPosition(db, column.id), nowIso(), current.id);
+  const put = (row: TaskRow) => {
+    const column = (row.column_id !== null ? getColumnRow(db, row.column_id) : undefined) ?? columnForStage(db, row.project_id, row.status);
+    db.prepare(
+      'UPDATE tasks SET deleted_at = NULL, deleted_by = NULL, column_id = ?, status = ?, position = ?, updated_at = ? WHERE id = ?',
+    ).run(column.id, column.stage, nextPosition(db, column.id), nowIso(), row.id);
+  };
+  put(current);
+  if (current.parent_id !== null) {
+    const parent = getTaskRow(db, current.parent_id);
+    if (!parent || parent.deleted_at) db.prepare('UPDATE tasks SET parent_id = NULL WHERE id = ?').run(current.id);
+  }
+  if (current.deleted_at) {
+    const children = db.prepare('SELECT * FROM tasks WHERE parent_id = ? AND deleted_at = ?').all(current.id, current.deleted_at) as TaskRow[];
+    for (const child of children) put(child);
+  }
   return getTask(db, current.id)!;
 }
 

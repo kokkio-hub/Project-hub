@@ -5,6 +5,8 @@ import { viewerParams, visibleProjectSql, type Viewer } from '../services/permis
 import { columnsByProject, insertDefaultColumns } from './columns.js';
 import type { Translator } from '../../shared/i18n/core.js';
 import { labelsByProject } from './labels.js';
+import { fieldsByProject } from './fields.js';
+import { milestonesByProject } from './milestones.js';
 
 export interface ProjectRow {
   id: number;
@@ -51,6 +53,8 @@ function hydrate(db: DB, rows: ProjectWithCountsRow[]): Project[] {
   const columns = columnsByProject(db, ids);
   const labels = labelsByProject(db, ids);
   const members = membersByProject(db, ids);
+  const milestones = milestonesByProject(db, ids);
+  const fields = fieldsByProject(db, ids);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -76,6 +80,8 @@ function hydrate(db: DB, rows: ProjectWithCountsRow[]): Project[] {
     columns: columns.get(row.id) ?? [],
     labels: labels.get(row.id) ?? [],
     memberIds: members.get(row.id) ?? [],
+    milestones: milestones.get(row.id) ?? [],
+    fields: fields.get(row.id) ?? [],
   }));
 }
 

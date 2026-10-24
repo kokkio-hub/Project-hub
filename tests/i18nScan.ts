@@ -142,7 +142,7 @@ export function serverMessages(): Set<string> {
     if (file.endsWith(`lib${path.sep}errors.ts`)) continue;
     const src = fs.readFileSync(file, 'utf8');
     // Error helpers: every string in the call is shown to people (the message and field messages).
-    for (const m of src.matchAll(/\b(badRequest|forbidden|notFound|conflict|unauthorized|new HttpError)\(/g)) {
+    for (const m of src.matchAll(/\b(badRequest|forbidden|notFound|conflict|unauthorized|new HttpError|new FieldValueError)\(/g)) {
       const { all } = callStrings(src, m.index! + m[0].length - 1);
       for (const s of all) if (words(s)) out.add(s);
     }

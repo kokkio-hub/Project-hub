@@ -72,6 +72,24 @@ export const TRASH_DAYS = 30;
 /** At most this many columns on one board. */
 export const MAX_COLUMNS = 12;
 
+/** Limits that keep a project manageable. */
+export const MAX_SUBTASKS = 100;
+export const MAX_MILESTONES = 50;
+export const MAX_FIELDS = 20;
+export const MAX_FIELD_OPTIONS = 30;
+export const MAX_SAVED_VIEWS = 50;
+
+/** Kinds of custom fields a project can add to its tasks. */
+export const FIELD_TYPES = ['text', 'number', 'select', 'date', 'checkbox'] as const;
+export type FieldType = (typeof FIELD_TYPES)[number];
+
+/** The project views a saved view can open. */
+export const PROJECT_VIEWS = ['board', 'list', 'timeline', 'calendar'] as const;
+export type ProjectView = (typeof PROJECT_VIEWS)[number];
+
+/** What the board can be split into rows by. A dropdown field is "field:<id>". */
+export type GroupBy = 'none' | 'assignee' | 'priority' | 'label' | `field:${number}`;
+
 /**
  * Identity colours for projects and people. Stored by name; the client maps each
  * name to a light/dark-mode value (see styles/tokens.css). The order is fixed and
@@ -163,6 +181,66 @@ export interface Label {
   color: ColorName;
 }
 
+/** A fixed point on the plan, such as "Launch". Tasks can be linked to it. */
+export interface Milestone {
+  id: number;
+  projectId: number;
+  name: string;
+  /** YYYY-MM-DD. */
+  date: string;
+  description: string;
+  /** Set when someone marks it reached. */
+  reachedAt: string | null;
+  /** Linked tasks outside the trash, and how many of them are done. */
+  taskCount: number;
+  doneCount: number;
+}
+
+/** A choice in a dropdown field. The id is stable, so renaming keeps the values. */
+export interface FieldOption {
+  id: string;
+  name: string;
+  color: ColorName;
+}
+
+/** A field a project adds to its tasks, like "Client" or "Story points". */
+export interface CustomField {
+  id: number;
+  projectId: number;
+  name: string;
+  type: FieldType;
+  /** Choices, for dropdown fields. */
+  options: FieldOption[];
+  /** Shown on board cards (otherwise only in the task details and the list). */
+  showOnCard: boolean;
+  position: number;
+}
+
+/** Filters and display choices a saved view brings back. */
+export interface ViewSettings {
+  q?: string;
+  assignee?: string;
+  priority?: string;
+  label?: string;
+  milestone?: string;
+  hideDone?: boolean;
+  /** Field id → value to match (a dropdown choice id, or "true"/"false" for a checkbox). */
+  fields?: Record<string, string>;
+  groupBy?: GroupBy;
+  showSubtasks?: boolean;
+  calendarMode?: 'month' | 'week';
+}
+
+/** Someone's saved combination of filters for a project. */
+export interface SavedView {
+  id: number;
+  projectId: number;
+  name: string;
+  view: ProjectView;
+  settings: ViewSettings;
+  position: number;
+}
+
 export interface Project {
   id: number;
   name: string;
@@ -183,6 +261,8 @@ export interface Project {
   labels: Label[];
   /** People added to the project (needed for private projects and guests). */
   memberIds: number[];
+  milestones: Milestone[];
+  fields: CustomField[];
 }
 
 export interface Task {
@@ -213,6 +293,14 @@ export interface Task {
   /** Blockers that aren't done yet. */
   openBlockerCount: number;
   recurrence: Recurrence | null;
+  /** Set on subtasks: the task it belongs to (same project). */
+  parentId: number | null;
+  /** Subtasks outside the trash, and how many are done. */
+  subtaskTotal: number;
+  subtaskDone: number;
+  milestoneId: number | null;
+  /** Custom field values by field id: text, a number, YYYY-MM-DD, a dropdown choice id, or "true". */
+  fieldValues: Record<string, string>;
 }
 
 /** A task as shown in a short reference (dependencies, search results). */
@@ -423,7 +511,7 @@ export interface DashboardData {
 // ---------------------------------------------------------------------------
 
 export interface LiveEvent {
-  entity: 'task' | 'project' | 'comment' | 'user' | 'notification';
+  entity: 'task' | 'project' | 'comment' | 'user' | 'notification' | 'view';
   action: 'created' | 'updated' | 'deleted';
   id: number;
   projectId?: number;

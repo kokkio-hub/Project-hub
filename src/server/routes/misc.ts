@@ -20,7 +20,7 @@ import {
   type SearchResults,
 } from '../../shared/types.js';
 import { requireAdmin, requireAuth } from '../auth/middleware.js';
-import { buildCalendar, type CalendarTask } from '../services/calendar.js';
+import { buildCalendar, type CalendarMilestone, type CalendarTask } from '../services/calendar.js';
 import { tasksCsv } from '../services/csv.js';
 import {
   canManageProject,
@@ -262,6 +262,29 @@ export function miscRouter(ctx: AppContext): Router {
       columnName: r.column_name,
       recurrence: r.recurrence ? { freq: r.recurrence, interval: r.recurrence_interval ?? 1 } : null,
     }));
+    // Milestones belong to nobody, so they're only in the feed of everything.
+    const milestones: CalendarMilestone[] =
+      user.calendar_scope === 'all'
+        ? (
+            db
+              .prepare(
+                `SELECT m.*, p.name AS project_name FROM milestones m JOIN projects p ON p.id = m.project_id
+                  WHERE m.project_id IN (${WORK_PROJECT_IDS}) AND p.status != 'archived' AND p.deleted_at IS NULL
+                    AND m.date >= date(@since)
+                  ORDER BY m.date LIMIT 500`,
+              )
+              .all({ ...viewerParams(user), since }) as { id: number; name: string; date: string; description: string; reached_at: string | null; updated_at: string; project_id: number; project_name: string }[]
+          ).map((m) => ({
+            id: m.id,
+            name: m.name,
+            date: m.date,
+            description: m.description,
+            reached: m.reached_at !== null,
+            updatedAt: m.updated_at,
+            projectId: m.project_id,
+            projectName: m.project_name,
+          }))
+        : [];
     const host = config.appUrl ? new URL(config.appUrl).host : (req.get('host') ?? 'project-hub');
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="tasks.ics"');
@@ -274,6 +297,7 @@ export function miscRouter(ctx: AppContext): Router {
           appUrl: config.appUrl,
           host,
           tasks,
+          milestones,
         },
         tr,
       ),
