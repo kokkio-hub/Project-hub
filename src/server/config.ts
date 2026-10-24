@@ -33,6 +33,33 @@ export interface Config {
   mailFrom: string | { name: string; address: string } | null;
   /** How long invitation links work, in days. */
   inviteTtlDays: number;
+  /** Folder for uploaded files. Defaults to "attachments" next to the database. */
+  attachmentsDir: string;
+  /** Largest file someone can attach, in bytes. */
+  maxUploadBytes: number;
+  /** All attachments together may use at most this many bytes (0 = no limit). */
+  storageLimitBytes: number;
+  /** Nightly copies of the database (and attachments) to an S3-compatible bucket. Null when not set up. */
+  backup: BackupConfig | null;
+  /** Hour of the day (UTC) the nightly backup runs. */
+  backupHourUtc: number;
+  /** Database backups older than this are removed from the bucket (the newest 7 are always kept). */
+  backupKeepDays: number;
+  /** Run reminders, emails, cleanups and backups on a timer (off in tests). */
+  scheduler: boolean;
+}
+
+export interface BackupConfig {
+  /** e.g. https://t3.storageapi.dev or https://<account>.r2.cloudflarestorage.com */
+  endpoint: string;
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** Folder inside the bucket, e.g. "project-hub/". */
+  prefix: string;
+  /** Use https://endpoint/bucket/key instead of https://bucket.endpoint/key. */
+  pathStyle: boolean;
 }
 
 export interface SmtpConfig {
@@ -115,6 +142,39 @@ function parseMailFrom(
   );
 }
 
+function parseBackup(env: NodeJS.ProcessEnv): BackupConfig | null {
+  const bucket = env.BACKUP_S3_BUCKET?.trim();
+  const endpointRaw = env.BACKUP_S3_ENDPOINT?.trim();
+  const accessKeyId = env.BACKUP_S3_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = env.BACKUP_S3_SECRET_ACCESS_KEY?.trim();
+  const any = bucket || endpointRaw || accessKeyId || secretAccessKey;
+  if (!any) return null;
+  const missing = [
+    !bucket && 'BACKUP_S3_BUCKET',
+    !endpointRaw && 'BACKUP_S3_ENDPOINT',
+    !accessKeyId && 'BACKUP_S3_ACCESS_KEY_ID',
+    !secretAccessKey && 'BACKUP_S3_SECRET_ACCESS_KEY',
+  ].filter(Boolean);
+  if (missing.length > 0) throw new Error(`Backups to a bucket need ${missing.join(', ')} as well.`);
+  let endpoint: URL;
+  try {
+    endpoint = new URL(endpointRaw!.includes('://') ? endpointRaw! : `https://${endpointRaw}`);
+  } catch {
+    throw new Error(`BACKUP_S3_ENDPOINT must be an address such as https://t3.storageapi.dev (got "${endpointRaw}").`);
+  }
+  let prefix = (env.BACKUP_S3_PREFIX ?? 'project-hub/').trim().replace(/^\/+/, '');
+  if (prefix && !prefix.endsWith('/')) prefix += '/';
+  return {
+    endpoint: endpoint.origin,
+    bucket: bucket!,
+    region: env.BACKUP_S3_REGION?.trim() || 'auto',
+    accessKeyId: accessKeyId!,
+    secretAccessKey: secretAccessKey!,
+    prefix,
+    pathStyle: parseBoolean(env.BACKUP_S3_PATH_STYLE) ?? false,
+  };
+}
+
 function parseTrustProxy(value: string | undefined): boolean | number | string {
   if (value === undefined || value.trim() === '') return false;
   const bool = parseBoolean(value);
@@ -138,6 +198,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       : null;
 
   const databasePath = env.DATABASE_PATH?.trim() || path.resolve('data', 'project-hub.db');
+  const resolvedDb = databasePath === ':memory:' ? databasePath : path.resolve(databasePath);
+  const attachmentsDir = path.resolve(
+    env.ATTACHMENTS_DIR?.trim() ||
+      (resolvedDb === ':memory:' ? path.join('data', 'attachments') : path.join(path.dirname(resolvedDb), 'attachments')),
+  );
   const appName = env.APP_NAME?.trim() || 'Project Hub';
   const smtp = parseSmtp(env);
   const resendApiKey = env.RESEND_API_KEY?.trim() || null;
@@ -146,7 +211,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     env: nodeEnv,
     port: parseInteger('PORT', env.PORT, 3000, 1, 65535),
     host: env.HOST?.trim() || '0.0.0.0',
-    databasePath: databasePath === ':memory:' ? databasePath : path.resolve(databasePath),
+    databasePath: resolvedDb,
     clientDir: path.resolve(env.CLIENT_DIR?.trim() || path.join(import.meta.dirname, '..', 'client')),
     appName,
     sessionTtlDays: parseInteger('SESSION_TTL_DAYS', env.SESSION_TTL_DAYS, 30, 1, 365),
@@ -159,5 +224,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     resendApiKey,
     mailFrom: parseMailFrom(env, smtp, resendApiKey, appName),
     inviteTtlDays: parseInteger('INVITE_TTL_DAYS', env.INVITE_TTL_DAYS, 7, 1, 90),
+    attachmentsDir,
+    maxUploadBytes: parseInteger('MAX_UPLOAD_MB', env.MAX_UPLOAD_MB, 25, 1, 1024) * 1024 * 1024,
+    storageLimitBytes: parseInteger('ATTACHMENT_STORAGE_LIMIT_MB', env.ATTACHMENT_STORAGE_LIMIT_MB, 0, 0, 10_000_000) * 1024 * 1024,
+    backup: parseBackup(env),
+    backupHourUtc: parseInteger('BACKUP_HOUR_UTC', env.BACKUP_HOUR_UTC, 2, 0, 23),
+    backupKeepDays: parseInteger('BACKUP_KEEP_DAYS', env.BACKUP_KEEP_DAYS, 30, 1, 3650),
+    scheduler: nodeEnv !== 'test',
   };
 }

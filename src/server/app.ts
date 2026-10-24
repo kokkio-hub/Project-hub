@@ -14,22 +14,45 @@ import { authenticate, clientClock, requireCustomHeader } from './auth/middlewar
 import { authRouter } from './routes/auth.js';
 import { commentsRouter, taskCommentsRouter } from './routes/comments.js';
 import { miscRouter } from './routes/misc.js';
-import { projectsRouter } from './routes/projects.js';
+import { columnsRouter, labelsRouter, projectsRouter } from './routes/projects.js';
+import { attachmentsRouter, checklistRouter, taskDetailsRouter } from './routes/taskDetails.js';
 import { tasksRouter } from './routes/tasks.js';
 import { usersRouter } from './routes/users.js';
+import { getProjectRow } from './repos/projects.js';
+import { getUserById } from './repos/users.js';
+import { Backups } from './services/backup.js';
+import { hasProjectAccess } from './services/permissions.js';
 
 export interface CreatedApp {
   app: Express;
   ctx: AppContext;
 }
 
-export function createApp({ db, config, mailer }: { db: DB; config: Config; mailer?: Mailer }): CreatedApp {
+export function createApp({
+  db,
+  config,
+  mailer,
+  backupFetch,
+}: {
+  db: DB;
+  config: Config;
+  mailer?: Mailer;
+  /** For tests: how the backup client reaches the bucket. */
+  backupFetch?: typeof fetch;
+}): CreatedApp {
+  // Live updates about a project only reach people who can see it.
+  const canSee = (userId: number, projectId: number) => {
+    const user = getUserById(db, userId);
+    const project = getProjectRow(db, projectId);
+    return !!user && (!project || hasProjectAccess(db, user, project));
+  };
   const ctx: AppContext = {
     db,
     config,
-    events: new EventHub(),
+    events: new EventHub(canSee),
     mailer: mailer ?? createMailer(config),
     jobs: new BackgroundJobs(),
+    backups: new Backups(db, config, { fetch: backupFetch }),
   };
   const app = express();
 
@@ -45,7 +68,7 @@ export function createApp({ db, config, mailer }: { db: DB; config: Config; mail
           'script-src': ["'self'"],
           // Inline style attributes position timeline bars and apply project colours.
           'style-src': ["'self'", "'unsafe-inline'"],
-          'img-src': ["'self'", 'data:'],
+          'img-src': ["'self'", 'data:', 'blob:'],
           'font-src': ["'self'", 'data:'],
           'connect-src': ["'self'"],
           'frame-ancestors': ["'none'"],
@@ -74,9 +97,14 @@ export function createApp({ db, config, mailer }: { db: DB; config: Config; mail
   api.use('/auth', authRouter(ctx));
   api.use('/users', usersRouter(ctx));
   api.use('/projects', projectsRouter(ctx));
+  api.use('/columns', columnsRouter(ctx));
+  api.use('/labels', labelsRouter(ctx));
   api.use('/tasks/:taskId/comments', taskCommentsRouter(ctx));
+  api.use('/tasks/:taskId', taskDetailsRouter(ctx));
   api.use('/tasks', tasksRouter(ctx));
   api.use('/comments', commentsRouter(ctx));
+  api.use('/checklist', checklistRouter(ctx));
+  api.use('/attachments', attachmentsRouter(ctx));
   api.use(miscRouter(ctx));
   api.use((_req, res) => {
     res.status(404).json({ error: 'Not found.' });

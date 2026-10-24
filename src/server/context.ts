@@ -4,6 +4,7 @@ import type { EventHub } from './lib/events.js';
 import type { BackgroundJobs } from './lib/jobs.js';
 import type { Mailer } from './lib/mailer.js';
 import type { UserRow } from './repos/users.js';
+import type { Backups } from './services/backup.js';
 
 /** Everything a route handler needs, passed explicitly so tests can build isolated apps. */
 export interface AppContext {
@@ -12,6 +13,7 @@ export interface AppContext {
   events: EventHub;
   mailer: Mailer;
   jobs: BackgroundJobs;
+  backups: Backups;
 }
 
 declare global {

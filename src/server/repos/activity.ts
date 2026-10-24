@@ -1,6 +1,7 @@
 import type { DB } from '../db/index.js';
 import { nowIso } from '../db/index.js';
 import type { ActivityItem, ActivityType } from '../../shared/types.js';
+import { projectAccessSql, viewerParams, type Viewer } from '../services/permissions.js';
 
 interface ActivityRow {
   id: number;
@@ -70,12 +71,22 @@ export function logActivity(db: DB, entry: NewActivity, createdAt: string = nowI
   ).run(entry.type, entry.userId, entry.projectId, entry.taskId ?? null, JSON.stringify(data), createdAt);
 }
 
+/**
+ * Recent activity the viewer may see. With `excludeArchived` (the team-wide
+ * feed), entries about archived projects and templates are left out too.
+ */
 export function listActivity(
   db: DB,
+  viewer: Viewer,
   options: { projectId?: number; taskId?: number; limit?: number; excludeArchived?: boolean } = {},
 ): ActivityItem[] {
-  const where: string[] = [];
-  const params: Record<string, unknown> = { limit: Math.min(Math.max(options.limit ?? 30, 1), 200) };
+  const where: string[] = [
+    `(a.project_id IS NULL OR a.project_id IN (SELECT ap.id FROM projects ap WHERE ${projectAccessSql('ap')}))`,
+  ];
+  const params: Record<string, unknown> = {
+    ...viewerParams(viewer),
+    limit: Math.min(Math.max(options.limit ?? 30, 1), 200),
+  };
   if (options.projectId !== undefined) {
     where.push('a.project_id = @projectId');
     params.projectId = options.projectId;
@@ -85,11 +96,13 @@ export function listActivity(
     params.taskId = options.taskId;
   }
   if (options.excludeArchived) {
-    where.push("(a.project_id IS NULL OR a.project_id NOT IN (SELECT id FROM projects WHERE status = 'archived'))");
+    where.push(
+      "(a.project_id IS NULL OR a.project_id NOT IN (SELECT id FROM projects WHERE status = 'archived' OR is_template = 1))",
+    );
   }
   const rows = db
     .prepare(
-      `SELECT a.* FROM activity a ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      `SELECT a.* FROM activity a WHERE ${where.join(' AND ')}
         ORDER BY a.created_at DESC, a.id DESC LIMIT @limit`,
     )
     .all(params) as ActivityRow[];

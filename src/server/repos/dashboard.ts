@@ -2,14 +2,19 @@ import type { DB } from '../db/index.js';
 import { addDays, startOfWeek } from '../../shared/dates.js';
 import { computeProjectHealth } from '../../shared/health.js';
 import type { DashboardData, DashboardProject, ProjectHealth, ThroughputWeek, WorkloadRow } from '../../shared/types.js';
+import { viewerParams, WORK_PROJECT_IDS, type Viewer } from '../services/permissions.js';
 import { listActivity } from './activity.js';
 import { listProjects } from './projects.js';
 import { listOpenTasksFor } from './tasks.js';
+import { listUsersFor } from './users.js';
 
 const THROUGHPUT_WEEKS = 8;
 
-/** "Open work" metrics only count projects that are running or paused. */
-const LIVE_PROJECTS = "SELECT id FROM projects WHERE status IN ('active', 'on_hold')";
+/** "Open work" metrics only count projects the viewer can see that are running or paused (not templates). */
+const LIVE_PROJECTS = `SELECT id FROM projects WHERE status IN ('active', 'on_hold') AND id IN (${WORK_PROJECT_IDS})`;
+
+/** Finished work counts in every visible project that isn't archived (or a template). */
+const COUNTED_PROJECTS = `SELECT id FROM projects WHERE status != 'archived' AND id IN (${WORK_PROJECT_IDS})`;
 
 const HEALTH_ORDER: Record<ProjectHealth, number> = { off_track: 0, at_risk: 1, on_track: 2, completed: 3 };
 
@@ -18,7 +23,8 @@ const HEALTH_ORDER: Record<ProjectHealth, number> = { off_track: 0, at_risk: 1, 
  * @param today the viewer's local date (YYYY-MM-DD)
  * @param tzOffsetMinutes the viewer's offset from UTC, used to bucket completion timestamps into local days
  */
-export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMinutes: number): DashboardData {
+export function buildDashboard(db: DB, viewer: Viewer, today: string, tzOffsetMinutes: number): DashboardData {
+  const vp = viewerParams(viewer);
   const weekStart = startOfWeek(today);
   const weekEnd = addDays(weekStart, 6);
   const lastWeekStart = addDays(weekStart, -7);
@@ -31,21 +37,21 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
               COALESCE(SUM(t.status != 'done' AND t.due_date < @today), 0)                           AS overdue,
               COALESCE(SUM(t.status != 'done' AND t.due_date >= @today AND t.due_date <= @weekEnd), 0) AS due_this_week
          FROM tasks t
-        WHERE t.project_id IN (${LIVE_PROJECTS})`,
+        WHERE t.deleted_at IS NULL AND t.project_id IN (${LIVE_PROJECTS})`,
     )
-    .get({ today, weekEnd }) as { open_tasks: number; overdue: number; due_this_week: number };
+    .get({ ...vp, today, weekEnd }) as { open_tasks: number; overdue: number; due_this_week: number };
 
   const completed = db
     .prepare(
       `SELECT COALESCE(SUM(date(t.completed_at, @tz) >= @weekStart), 0) AS this_week,
               COALESCE(SUM(date(t.completed_at, @tz) >= @lastWeekStart AND date(t.completed_at, @tz) < @weekStart), 0) AS last_week
          FROM tasks t
-        WHERE t.status = 'done' AND t.completed_at IS NOT NULL
-          AND t.project_id IN (SELECT id FROM projects WHERE status != 'archived')`,
+        WHERE t.status = 'done' AND t.completed_at IS NOT NULL AND t.deleted_at IS NULL
+          AND t.project_id IN (${COUNTED_PROJECTS})`,
     )
-    .get({ tz, weekStart, lastWeekStart }) as { this_week: number; last_week: number };
+    .get({ ...vp, tz, weekStart, lastWeekStart }) as { this_week: number; last_week: number };
 
-  const projects = listProjects(db, { today });
+  const projects = listProjects(db, viewer, { today });
   const activeProjects = projects.filter((p) => p.status === 'active').length;
 
   const dashboardProjects: DashboardProject[] = projects
@@ -84,6 +90,7 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
         a.name.localeCompare(b.name),
     );
 
+  const visibleUsers = new Set(viewer.role === 'guest' ? listUsersFor(db, viewer).map((u) => u.id) : []);
   const workload = (
     db
       .prepare(
@@ -95,12 +102,13 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
                 COALESCE(SUM(t.due_date >= @today AND t.due_date <= @weekEnd), 0)          AS dueThisWeek
            FROM users u
            LEFT JOIN tasks t
-                  ON t.assignee_id = u.id AND t.status != 'done' AND t.project_id IN (${LIVE_PROJECTS})
-          WHERE u.is_active = 1
+                  ON t.assignee_id = u.id AND t.status != 'done' AND t.deleted_at IS NULL AND t.project_id IN (${LIVE_PROJECTS})
+          WHERE u.is_active = 1 AND u.role != 'guest'
           GROUP BY u.id`,
       )
-      .all({ today, weekEnd }) as Omit<WorkloadRow, 'open'>[]
+      .all({ ...vp, today, weekEnd }) as Omit<WorkloadRow, 'open'>[]
   )
+    .filter((row) => viewer.role !== 'guest' || visibleUsers.has(row.userId))
     .map((row) => ({ ...row, open: row.todo + row.in_progress + row.review }))
     .sort((a, b) => b.open - a.open || b.overdue - a.overdue || a.userId - b.userId);
 
@@ -110,12 +118,12 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
         .prepare(
           `SELECT date(date(t.completed_at, @tz), '-6 days', 'weekday 1') AS week, COUNT(*) AS n
              FROM tasks t
-            WHERE t.status = 'done' AND t.completed_at IS NOT NULL
+            WHERE t.status = 'done' AND t.completed_at IS NOT NULL AND t.deleted_at IS NULL
               AND date(t.completed_at, @tz) >= @rangeStart
-              AND t.project_id IN (SELECT id FROM projects WHERE status != 'archived')
+              AND t.project_id IN (${COUNTED_PROJECTS})
             GROUP BY week`,
         )
-        .all({ tz, rangeStart }) as { week: string; n: number }[]
+        .all({ ...vp, tz, rangeStart }) as { week: string; n: number }[]
     ).map((r) => [r.week, r.n]),
   );
   const createdByWeek = new Map(
@@ -124,11 +132,11 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
         .prepare(
           `SELECT date(date(t.created_at, @tz), '-6 days', 'weekday 1') AS week, COUNT(*) AS n
              FROM tasks t
-            WHERE date(t.created_at, @tz) >= @rangeStart
-              AND t.project_id IN (SELECT id FROM projects WHERE status != 'archived')
+            WHERE date(t.created_at, @tz) >= @rangeStart AND t.deleted_at IS NULL
+              AND t.project_id IN (${COUNTED_PROJECTS})
             GROUP BY week`,
         )
-        .all({ tz, rangeStart }) as { week: string; n: number }[]
+        .all({ ...vp, tz, rangeStart }) as { week: string; n: number }[]
     ).map((r) => [r.week, r.n]),
   );
   const throughput: ThroughputWeek[] = [];
@@ -150,7 +158,7 @@ export function buildDashboard(db: DB, userId: number, today: string, tzOffsetMi
     projects: dashboardProjects,
     workload,
     throughput,
-    myTasks: listOpenTasksFor(db, userId, 8),
-    activity: listActivity(db, { limit: 15, excludeArchived: true }),
+    myTasks: listOpenTasksFor(db, viewer, 8),
+    activity: listActivity(db, viewer, { limit: 15, excludeArchived: true }),
   };
 }

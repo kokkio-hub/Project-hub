@@ -10,7 +10,7 @@ import {
   getUserById,
   insertUser,
   isPending,
-  listUsers,
+  listUsersFor,
   toUser,
   updateUser,
   type UserRow,
@@ -67,11 +67,11 @@ export function usersRouter(ctx: AppContext): Router {
     }
   };
 
-  /** The team directory. Everyone can see it (needed for assigning work). */
+  /** The team directory (needed for assigning work). Guests only see the people on their projects. */
   router.get('/', requireAuth, (req, res) => {
     const includePrivate = req.user!.role === 'admin';
     const invites = includePrivate ? inviteStatuses(db) : undefined;
-    res.json({ users: listUsers(db).map((u) => toUser(u, { includePrivate, invite: invites?.get(u.id) ?? null })) });
+    res.json({ users: listUsersFor(db, req.user!).map((u) => toUser(u, { includePrivate, invite: invites?.get(u.id) ?? null })) });
   });
 
   /**
@@ -138,6 +138,21 @@ export function usersRouter(ctx: AppContext): Router {
     if (target.id === req.user!.id && input.isActive === false) {
       throw badRequest("You can't deactivate your own account.");
     }
+    // Guests can't own projects or have work assigned, so that has to be handed over first.
+    if (input.role === 'guest' && target.role !== 'guest') {
+      const owned = (db.prepare('SELECT COUNT(*) AS n FROM projects WHERE owner_id = ? AND deleted_at IS NULL').get(target.id) as { n: number }).n;
+      const open = (
+        db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE assignee_id = ? AND status != 'done' AND deleted_at IS NULL").get(target.id) as {
+          n: number;
+        }
+      ).n;
+      if (owned > 0 || open > 0) {
+        const parts = [owned > 0 && `owns ${owned} project${owned === 1 ? '' : 's'}`, open > 0 && `has ${open} open task${open === 1 ? '' : 's'}`]
+          .filter(Boolean)
+          .join(' and ');
+        throw badRequest(`${target.name} ${parts}. Hand those over before making them a guest.`, { role: 'Reassign their work first' });
+      }
+    }
 
     const user = updateUser(db, target.id, input);
     if (input.isActive === false) {
@@ -180,6 +195,20 @@ export function usersRouter(ctx: AppContext): Router {
     deleteUser(db, target.id);
     events.broadcast({ entity: 'user', action: 'deleted', id: target.id, actorId: req.user!.id });
     res.status(204).end();
+  });
+
+  /** Turns off someone's two-factor sign-in, for when they lost their phone and their recovery codes. */
+  router.post('/:id/disable-2fa', requireAdmin, (req, res) => {
+    const target = loadUser(req.params.id);
+    if (!target.totp_secret) throw badRequest(`${target.name} doesn't use two-factor sign-in.`);
+    db.transaction(() => {
+      db.prepare(
+        'UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_counter = NULL WHERE id = ?',
+      ).run(target.id);
+      db.prepare('DELETE FROM recovery_codes WHERE user_id = ?').run(target.id);
+    })();
+    events.broadcast({ entity: 'user', action: 'updated', id: target.id, actorId: req.user!.id });
+    res.json({ user: forAdmin(getUserById(db, target.id)!) });
   });
 
   /**

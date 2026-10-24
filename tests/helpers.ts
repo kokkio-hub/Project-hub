@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import request from 'supertest';
 import { createApp } from '../src/server/app.js';
 import { loadConfig, type Config } from '../src/server/config.js';
 import { openDatabase } from '../src/server/db/index.js';
 import { MailError, type Mailer, type MailMessage } from '../src/server/lib/mailer.js';
-import type { User } from '../src/shared/types.js';
+import type { Project, Task, User } from '../src/shared/types.js';
 
 export const TODAY = '2026-06-10'; // a Wednesday
 
@@ -38,16 +41,17 @@ export function tokenOf(link: string): string {
   return link.slice(link.indexOf('#') + 1);
 }
 
-export function makeApp(overrides: Partial<Config> = {}, options: { mailer?: Mailer } = {}) {
+export function makeApp(overrides: Partial<Config> = {}, options: { mailer?: Mailer; backupFetch?: typeof fetch } = {}) {
   const config: Config = {
     ...loadConfig({ NODE_ENV: 'test' }),
     databasePath: ':memory:',
     clientDir: '/nonexistent',
     loginRateLimit: 1000,
+    attachmentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'project-hub-test-')),
     ...overrides,
   };
   const db = openDatabase(':memory:');
-  const { app, ctx } = createApp({ db, config, mailer: options.mailer });
+  const { app, ctx } = createApp({ db, config, mailer: options.mailer, backupFetch: options.backupFetch });
   return { app, db, ctx, config };
 }
 
@@ -77,7 +81,7 @@ export async function setupAdmin(t: TestApp): Promise<{ admin: Client; adminUser
 export async function addMember(
   t: TestApp,
   admin: Client,
-  person: { name: string; email: string; role?: 'admin' | 'member' },
+  person: { name: string; email: string; role?: 'admin' | 'member' | 'guest' },
   password = 'member-password-1',
 ): Promise<{ agent: Client; user: User }> {
   const created = await admin.post('/api/users').send(person).expect(201);
@@ -88,4 +92,20 @@ export async function addMember(
     .send({ currentPassword: created.body.temporaryPassword, newPassword: password })
     .expect(200);
   return { agent, user: created.body.user as User };
+}
+
+export async function createProject(agent: Client, body: Record<string, unknown> = {}) {
+  const res = await agent.post('/api/projects').send({ name: 'Launch', ...body }).expect(201);
+  return res.body.project as Project;
+}
+
+export async function createTask(agent: Client, projectId: number, body: Record<string, unknown> = {}) {
+  const res = await agent.post('/api/tasks').send({ projectId, title: 'Task', ...body }).expect(201);
+  return res.body.task as Task;
+}
+
+/** A person who joined with a password (not invited by link), signed in. */
+export async function addPerson(t: TestApp, admin: Client, name: string, role: 'admin' | 'member' | 'guest' = 'member') {
+  const email = `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`;
+  return addMember(t, admin, { name, email, role });
 }
