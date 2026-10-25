@@ -14,16 +14,14 @@ import { getProjectRow, listProjects, restoreProject } from '../repos/projects.j
 import { getTaskRow, listTasks, restoreTask, toTaskRef, type TaskRow } from '../repos/tasks.js';
 import { listUsers, listUsersFor, type UserRow } from '../repos/users.js';
 import {
-  TASK_PRIORITY_LABELS,
-  TASK_STATUS_LABELS,
   type AdminStatus,
   type ColorName,
   type ProjectStatus,
   type SearchResults,
 } from '../../shared/types.js';
 import { requireAdmin, requireAuth } from '../auth/middleware.js';
-import { buildCalendar, type CalendarTask } from '../services/calendar.js';
-import { toCsv } from '../services/csv.js';
+import { buildCalendar, type CalendarMilestone, type CalendarTask } from '../services/calendar.js';
+import { tasksCsv } from '../services/csv.js';
 import {
   canManageProject,
   hasProjectAccess,
@@ -32,6 +30,7 @@ import {
   visibleTaskSql,
   WORK_PROJECT_IDS,
 } from '../services/permissions.js';
+import { trFor, userLanguage } from '../i18n/index.js';
 import { destroyProject, destroyTask, listTrash } from '../services/trash.js';
 
 const activityQuerySchema = z.object({
@@ -61,7 +60,7 @@ export function miscRouter(ctx: AppContext): Router {
   const { db, events, config } = ctx;
 
   router.get('/dashboard', requireAuth, (req, res) => {
-    res.json(buildDashboard(db, req.user!, req.clientToday, req.tzOffsetMinutes));
+    res.json(buildDashboard(db, req.user!, req.clientToday, req.tzOffsetMinutes, trFor(req.lang)));
   });
 
   router.get('/activity', requireAuth, (req, res) => {
@@ -263,16 +262,45 @@ export function miscRouter(ctx: AppContext): Router {
       columnName: r.column_name,
       recurrence: r.recurrence ? { freq: r.recurrence, interval: r.recurrence_interval ?? 1 } : null,
     }));
+    // Milestones belong to nobody, so they're only in the feed of everything.
+    const milestones: CalendarMilestone[] =
+      user.calendar_scope === 'all'
+        ? (
+            db
+              .prepare(
+                `SELECT m.*, p.name AS project_name FROM milestones m JOIN projects p ON p.id = m.project_id
+                  WHERE m.project_id IN (${WORK_PROJECT_IDS}) AND p.status != 'archived' AND p.deleted_at IS NULL
+                    AND m.date >= date(@since)
+                  ORDER BY m.date LIMIT 500`,
+              )
+              .all({ ...viewerParams(user), since }) as { id: number; name: string; date: string; description: string; reached_at: string | null; updated_at: string; project_id: number; project_name: string }[]
+          ).map((m) => ({
+            id: m.id,
+            name: m.name,
+            date: m.date,
+            description: m.description,
+            reached: m.reached_at !== null,
+            updatedAt: m.updated_at,
+            projectId: m.project_id,
+            projectName: m.project_name,
+          }))
+        : [];
     const host = config.appUrl ? new URL(config.appUrl).host : (req.get('host') ?? 'project-hub');
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="tasks.ics"');
+    // Calendar apps fetch this without the app's headers, so it's in the person's own language.
+    const tr = trFor(userLanguage(user, config.defaultLanguage));
     res.send(
-      buildCalendar({
-        name: `${config.appName}: ${user.calendar_scope === 'all' ? 'all tasks' : `${user.name}'s tasks`}`,
-        appUrl: config.appUrl,
-        host,
-        tasks,
-      }),
+      buildCalendar(
+        {
+          name: `${config.appName}: ${user.calendar_scope === 'all' ? tr.t('all tasks') : tr.t('{name}’s tasks', { name: user.name })}`,
+          appUrl: config.appUrl,
+          host,
+          tasks,
+          milestones,
+        },
+        tr,
+      ),
     );
   });
 
@@ -285,30 +313,7 @@ export function miscRouter(ctx: AppContext): Router {
     const tasks = listTasks(db, viewer, { includeArchived: true });
     const projects = new Map(listProjects(db, viewer, { today: req.clientToday, includeArchived: true }).map((p) => [p.id, p]));
     const users = new Map(listUsers(db).map((u) => [u.id, u.name]));
-    const csv = toCsv(
-      ['ID', 'Project', 'Title', 'Column', 'Stage', 'Priority', 'Assignee', 'Labels', 'Start date', 'Due date', 'Completed', 'Created', 'Description'],
-      tasks.map((t) => {
-        const p = projects.get(t.projectId);
-        return [
-          t.id,
-          p?.name ?? '',
-          t.title,
-          p?.columns.find((c) => c.id === t.columnId)?.name ?? TASK_STATUS_LABELS[t.status],
-          TASK_STATUS_LABELS[t.status],
-          TASK_PRIORITY_LABELS[t.priority],
-          t.assigneeId ? (users.get(t.assigneeId) ?? '') : '',
-          t.labelIds
-            .map((id) => p?.labels.find((l) => l.id === id)?.name)
-            .filter(Boolean)
-            .join(', '),
-          t.startDate,
-          t.dueDate,
-          t.completedAt?.slice(0, 10),
-          t.createdAt.slice(0, 10),
-          t.description,
-        ];
-      }),
-    );
+    const csv = tasksCsv({ tasks, projects, userNames: users, includeProject: true, tr: trFor(req.lang) });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="all-tasks-${req.clientToday}.csv"`);
     res.send(csv);

@@ -20,6 +20,7 @@ import { ErrorNotice, Spinner, useToast } from '../../components/Feedback';
 import { ColorPicker, Field, UserSelect } from '../../components/Form';
 import { Modal } from '../../components/Modal';
 import { LabelManager } from '../labels/LabelManager';
+import { t } from '../../i18n';
 
 interface Props {
   open: boolean;
@@ -33,7 +34,7 @@ interface Props {
 }
 
 export function ProjectFormModal({ open, onClose, project, templateId, asTemplate }: Props) {
-  const title = project ? (project.isTemplate ? 'Template settings' : 'Project settings') : asTemplate ? 'New template' : 'New project';
+  const title = project ? (project.isTemplate ? t('Template settings') : t('Project settings')) : asTemplate ? t('New template') : t('New project');
   return (
     <Modal open={open} onClose={onClose} title={title} wide>
       {open && <ProjectForm project={project} onClose={onClose} templateId={templateId} asTemplate={asTemplate} />}
@@ -52,7 +53,7 @@ function suggestColor(projects: Project[] | undefined): ColorName {
 /** Pick who is on a project: everyone active, guests included. */
 export function MemberPicker({ users, value, onChange, ownerId }: { users: User[]; value: number[]; onChange: (ids: number[]) => void; ownerId: number | null }) {
   const people = users.filter((u) => u.isActive || value.includes(u.id));
-  if (people.length === 0) return <p className="muted member-empty">No guests yet. Add guests on the Team page first.</p>;
+  if (people.length === 0) return <p className="muted member-empty">{t('No guests yet. Add guests on the Team page first.')}</p>;
   return (
     <ul className="member-picker">
       {people.map((u) => {
@@ -70,9 +71,9 @@ export function MemberPicker({ users, value, onChange, ownerId }: { users: User[
               />
               <Avatar user={u} size="sm" title={null} />
               <span className="truncate">{u.name}</span>
-              {owner && <span className="badge">Owner</span>}
-              {u.role === 'guest' && <span className="badge">Guest</span>}
-              {u.role === 'admin' && !owner && <span className="muted member-note">Admin</span>}
+              {owner && <span className="badge">{t('Owner')}</span>}
+              {u.role === 'guest' && <span className="badge">{t('Guest')}</span>}
+              {u.role === 'admin' && !owner && <span className="muted member-note">{t('Admin')}</span>}
             </label>
           </li>
         );
@@ -116,7 +117,7 @@ function ProjectForm({
     fromTemplateId: templateId ?? 0,
     keepAssignees: false,
   });
-  const template = useMemo(() => templates?.find((t) => t.id === form.fromTemplateId), [templates, form.fromTemplateId]);
+  const template = useMemo(() => templates?.find((item) => item.id === form.fromTemplateId), [templates, form.fromTemplateId]);
   const mutation = project ? update : create;
   const fields = mutation.error instanceof ApiError ? mutation.error.fields : {};
   // Clear a server error as soon as the form is edited again.
@@ -130,7 +131,7 @@ function ProjectForm({
     if (!template || project) return;
     setForm((f) => ({ ...f, description: f.description || template.description, color: template.color }));
   }, [template, project]);
-  const dateError = form.startDate && form.dueDate && form.startDate > form.dueDate ? 'Must be on or after the start date' : undefined;
+  const dateError = form.startDate && form.dueDate && form.startDate > form.dueDate ? t('Must be on or after the start date') : undefined;
   const owners = users.filter((u) => u.role !== 'guest');
   const membersChanged = project ? [...form.memberIds].sort().join() !== [...project.memberIds].sort().join() : false;
 
@@ -154,10 +155,10 @@ function ProjectForm({
           onSuccess: () => {
             if (membersChanged) {
               setMembers.mutate(form.memberIds, {
-                onError: (e) => toast.error(`Saved, but the people couldn't be updated: ${errorMessage(e)}`),
+                onError: (e) => toast.error(t('Saved, but the people couldn’t be updated: {error}', { error: errorMessage(e) })),
               });
             }
-            toast.success(isTemplate ? 'Template updated' : 'Project updated');
+            toast.success(isTemplate ? t('Template updated') : t('Project updated'));
             onClose();
           },
         },
@@ -190,44 +191,44 @@ function ProjectForm({
             </div>
           )}
           {!project && !isTemplate && (templates?.length ?? 0) > 0 && (
-            <Field label="Start from" htmlFor="project-template" className="span-2" hint={template ? 'Columns, labels and tasks are copied. Dates move with the start date.' : undefined}>
+            <Field label={t('Start from')} htmlFor="project-template" className="span-2" hint={template ? t('Columns, labels and tasks are copied. Dates move with the start date.') : undefined}>
               <select
                 id="project-template"
                 className="select"
                 value={form.fromTemplateId}
                 onChange={(e) => setForm({ ...form, fromTemplateId: Number(e.target.value) })}
               >
-                <option value={0}>A blank project</option>
-                {templates!.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    Template: {t.name}
+                <option value={0}>{t('A blank project')}</option>
+                {templates!.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {t('Template: {name}', { name: item.name })}
                   </option>
                 ))}
               </select>
             </Field>
           )}
-          <Field label="Name" htmlFor="project-name" error={fields.name} className="span-2">
+          <Field label={t('Name')} htmlFor="project-name" error={fields.name} className="span-2">
             <input
               id="project-name"
               className="input"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder={isTemplate ? 'e.g. Client website' : 'e.g. Website redesign'}
+              placeholder={isTemplate ? t('e.g. Client website') : t('e.g. Website redesign')}
               autoFocus
               maxLength={120}
             />
           </Field>
-          <Field label="Description" htmlFor="project-description" error={fields.description} className="span-2">
+          <Field label={t('Description')} htmlFor="project-description" error={fields.description} className="span-2">
             <textarea
               id="project-description"
               className="textarea"
               rows={3}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="What is this project about?"
+              placeholder={t('What is this project about?')}
             />
           </Field>
-          <Field label="Start date" htmlFor="project-start" error={fields.startDate}>
+          <Field label={t('Start date')} htmlFor="project-start" error={fields.startDate}>
             <input
               id="project-start"
               type="date"
@@ -236,7 +237,7 @@ function ProjectForm({
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
             />
           </Field>
-          <Field label="Due date" htmlFor="project-due" error={dateError ?? fields.dueDate} hint={template && !form.dueDate ? 'Leave empty to follow the template.' : undefined}>
+          <Field label={t('Due date')} htmlFor="project-due" error={dateError ?? fields.dueDate} hint={template && !form.dueDate ? t('Leave empty to follow the template.') : undefined}>
             <input
               id="project-due"
               type="date"
@@ -246,17 +247,17 @@ function ProjectForm({
               aria-invalid={Boolean(dateError)}
             />
           </Field>
-          <Field label="Owner" htmlFor="project-owner" error={fields.ownerId} hint="The owner and admins can change settings.">
+          <Field label={t('Owner')} htmlFor="project-owner" error={fields.ownerId} hint={t('The owner and admins can change settings.')}>
             <UserSelect
               id="project-owner"
               users={owners}
               value={form.ownerId}
               onChange={(ownerId) => setForm({ ...form, ownerId })}
-              unassignedLabel="No owner"
+              unassignedLabel={t('No owner')}
             />
           </Field>
           {project && !isTemplate ? (
-            <Field label="Status" htmlFor="project-status">
+            <Field label={t('Status')} htmlFor="project-status">
               <select
                 id="project-status"
                 className="select"
@@ -265,7 +266,7 @@ function ProjectForm({
               >
                 {PROJECT_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {PROJECT_STATUS_LABELS[s]}
+                    {t(PROJECT_STATUS_LABELS[s])}
                   </option>
                 ))}
               </select>
@@ -281,23 +282,23 @@ function ProjectForm({
                 checked={form.keepAssignees}
                 onChange={(e) => setForm({ ...form, keepAssignees: e.target.checked })}
               />
-              Keep who the template’s tasks are assigned to
+              {t('Keep who the template’s tasks are assigned to')}
             </label>
           )}
-          <Field label="Colour" className="span-2">
-            <ColorPicker label="Project colour" value={form.color} onChange={(color) => setForm({ ...form, color })} />
+          <Field label={t('Colour')} className="span-2">
+            <ColorPicker label={t('Project colour')} value={form.color} onChange={(color) => setForm({ ...form, color })} />
           </Field>
 
           <fieldset className="plain-fieldset field span-2">
-            <legend className="field-label">Who can see it</legend>
+            <legend className="field-label">{t('Who can see it')}</legend>
             <div className="radio-cards">
               <label className="radio-card">
                 <input type="radio" name="visibility" checked={form.visibility === 'team'} onChange={() => setForm({ ...form, visibility: 'team' })} />
                 <div>
                   <strong>
-                    <Users size={14} aria-hidden /> The whole team
+                    <Users size={14} aria-hidden /> {t('The whole team')}
                   </strong>
-                  <span>Every member can see and work on it. Guests only if you add them below.</span>
+                  <span>{t('Every member can see and work on it. Guests only if you add them below.')}</span>
                 </div>
               </label>
               <label className="radio-card">
@@ -309,20 +310,20 @@ function ProjectForm({
                 />
                 <div>
                   <strong>
-                    <Lock size={14} aria-hidden /> Only the people added
+                    <Lock size={14} aria-hidden /> {t('Only the people added')}
                   </strong>
-                  <span>Private: the owner, the people below and admins.</span>
+                  <span>{t('Private: the owner, the people below and admins.')}</span>
                 </div>
               </label>
             </div>
           </fieldset>
           <Field
-            label={form.visibility === 'private' ? 'People on this project' : 'Guests and extra people'}
+            label={form.visibility === 'private' ? t('People on this project') : t('Guests and extra people')}
             className="span-2"
             hint={
               form.visibility === 'private'
-                ? 'Only these people (and admins) can open the project.'
-                : 'Members already see team projects. Add guests here to share it with them.'
+                ? t('Only these people (and admins) can open the project.')
+                : t('Members already see team projects. Add guests here to share it with them.')
             }
           >
             <MemberPicker
@@ -335,7 +336,7 @@ function ProjectForm({
 
           {project && (
             <div className="span-2">
-              <span className="field-label">Labels</span>
+              <span className="field-label">{t('Labels')}</span>
               <LabelManager project={project} />
             </div>
           )}
@@ -343,11 +344,11 @@ function ProjectForm({
       </div>
       <div className="modal-footer">
         <button type="button" className="btn" onClick={onClose}>
-          Cancel
+          {t('Cancel')}
         </button>
         <button type="submit" className="btn btn-primary" disabled={mutation.isPending || !form.name.trim()}>
           {mutation.isPending && <Spinner size={16} />}
-          {project ? 'Save changes' : isTemplate ? 'Create template' : 'Create project'}
+          {project ? t('Save changes') : isTemplate ? t('Create template') : t('Create project')}
         </button>
       </div>
     </form>

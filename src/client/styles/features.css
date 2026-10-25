@@ -1117,3 +1117,33 @@ dialog.modal.palette {
 .toast .toast-action + .icon-btn {
   margin-left: -4px;
 }
+
+/* English / Nederlands under the sign-in card. */
+.language-switch {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+  font-size: var(--text-sm);
+}
+.language-switch .link-button {
+  color: var(--text-3);
+}
+.language-switch .link-button[aria-current='true'] {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.auth-screen {
+  flex-direction: column;
+}
+
+/* Segmented choices inside a form field keep their natural width. */
+.field > .segmented {
+  align-self: flex-start;
+}
+.field-label:has(> svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

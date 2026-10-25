@@ -5,6 +5,7 @@ import { errorMessage } from '../../api/client';
 import { useCreateLabel } from '../../api/board';
 import { useToast } from '../../components/Feedback';
 import { Popover } from '../../components/Popover';
+import { t } from '../../i18n';
 
 /** A label: its colour as a small dot, then its name. */
 export function LabelChip({ label, size = 'md' }: { label: Pick<Label, 'name' | 'color'>; size?: 'sm' | 'md' }) {
@@ -82,11 +83,11 @@ export function LabelPicker({
 
   return (
     <Popover
-      label="Labels"
+      label={t('Labels')}
       trigger={(props) => (
         <button type="button" className="btn btn-sm btn-ghost label-trigger" disabled={disabled} {...props}>
           <Tag size={14} aria-hidden />
-          {value.length === 0 ? 'Add labels' : 'Edit labels'}
+          {value.length === 0 ? t('Add labels') : t('Edit labels')}
         </button>
       )}
     >
@@ -95,7 +96,7 @@ export function LabelPicker({
           {/* Not a <form>: the picker can sit inside another form (the new task dialog). */}
           <input
             className="input input-sm"
-            placeholder="Find or create a label…"
+            placeholder={t('Find or create a label…')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -105,10 +106,10 @@ export function LabelPicker({
               }
             }}
             maxLength={40}
-            aria-label="Find or create a label"
+            aria-label={t('Find or create a label')}
             data-autofocus
           />
-          <ul className="label-options" role="listbox" aria-multiselectable="true" aria-label="Labels">
+          <ul className="label-options" role="listbox" aria-multiselectable="true" aria-label={t('Labels')}>
             {matches.map((l) => {
               const selected = value.includes(l.id);
               return (
@@ -128,11 +129,11 @@ export function LabelPicker({
                 </li>
               );
             })}
-            {matches.length === 0 && !q && <li className="muted label-empty">No labels yet. Type a name to create one.</li>}
+            {matches.length === 0 && !q && <li className="muted label-empty">{t('No labels yet. Type a name to create one.')}</li>}
           </ul>
           {q && !exact && (
             <button type="button" className="label-option label-create" onClick={() => add()} disabled={create.isPending}>
-              <Plus size={14} aria-hidden /> Create “{query.trim()}”
+              <Plus size={14} aria-hidden /> {t('Create “{name}”', { name: query.trim() })}
             </button>
           )}
         </div>

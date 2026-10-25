@@ -10,6 +10,7 @@ import {
   type UserRole,
 } from '../../shared/types.js';
 import { VISIBLE_PROJECT_IDS, viewerParams, type Viewer } from '../services/permissions.js';
+import { isLang } from '../../shared/i18n/core.js';
 
 export interface UserRow {
   id: number;
@@ -33,6 +34,10 @@ export interface UserRow {
   totp_last_counter: number | null;
   calendar_token_hash: string | null;
   calendar_scope: 'mine' | 'all';
+  /** Chosen interface language; null follows the browser. */
+  language: string | null;
+  /** The language they last used the app in, for emails. */
+  ui_language: string | null;
 }
 
 /** Invited people who haven't accepted yet have no password. */
@@ -73,6 +78,7 @@ export function toMe(db: DB, row: UserRow): Me {
     notifyEmail: row.notify_email,
     calendarFeed: row.calendar_token_hash !== null,
     calendarScope: row.calendar_scope,
+    language: isLang(row.language) ? row.language : null,
   };
 }
 
@@ -190,6 +196,8 @@ export interface UserPatch {
   mustChangePassword?: boolean;
   lastLoginAt?: string;
   notifyEmail?: NotifyEmailMode;
+  /** Interface language; null goes back to following the browser. */
+  language?: string | null;
 }
 
 export function updateUser(db: DB, id: number, patch: UserPatch): UserRow {
@@ -204,6 +212,7 @@ export function updateUser(db: DB, id: number, patch: UserPatch): UserRow {
   if (patch.mustChangePassword !== undefined) columns.must_change_password = patch.mustChangePassword ? 1 : 0;
   if (patch.lastLoginAt !== undefined) columns.last_login_at = patch.lastLoginAt;
   if (patch.notifyEmail !== undefined) columns.notify_email = patch.notifyEmail;
+  if (patch.language !== undefined) columns.language = patch.language;
 
   const keys = Object.keys(columns);
   if (keys.length > 0) {

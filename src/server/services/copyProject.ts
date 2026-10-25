@@ -5,6 +5,8 @@ import type { ColorName, TaskStatus } from '../../shared/types.js';
 import type { ColumnRow } from '../repos/columns.js';
 import { insertColumn, listColumnRows } from '../repos/columns.js';
 import { insertLabel, listLabelRows } from '../repos/labels.js';
+import { copyFieldValues, insertField, listFieldRows, toField } from '../repos/fields.js';
+import { insertMilestone, listMilestoneRows } from '../repos/milestones.js';
 import { addMember, insertProject, listMemberIds, type ProjectRow } from '../repos/projects.js';
 import type { TaskRow } from '../repos/tasks.js';
 import { getUserById } from '../repos/users.js';
@@ -74,12 +76,24 @@ export function copyProject(db: DB, source: ProjectRow, options: CopyOptions): n
   const labelMap = new Map<number, number>();
   for (const l of listLabelRows(db, source.id)) labelMap.set(l.id, insertLabel(db, projectId, l.name, l.color).id);
 
+  // Milestones move with the dates; custom fields keep their choices (and choice ids).
+  const milestoneMap = new Map<number, number>();
+  for (const m of listMilestoneRows(db, source.id)) {
+    const reached = options.resetProgress || options.asTemplate ? null : m.reached_at;
+    milestoneMap.set(m.id, insertMilestone(db, projectId, { name: m.name, date: shift(m.date)!, description: m.description }, options.createdBy, reached).id);
+  }
+  const fieldMap = new Map<number, number>();
+  for (const f of listFieldRows(db, source.id)) {
+    const field = toField(f);
+    fieldMap.set(f.id, insertField(db, projectId, { name: field.name, type: field.type, options: field.options, showOnCard: field.showOnCard }, f.position).id);
+  }
+
   if (!options.includeTasks) return projectId;
 
   const tasks = db
     .prepare(
       `SELECT t.* FROM tasks t LEFT JOIN project_columns c ON c.id = t.column_id
-        WHERE t.project_id = ? AND t.deleted_at IS NULL ORDER BY c.position, t.position, t.id`,
+        WHERE t.project_id = ? AND t.deleted_at IS NULL ORDER BY t.parent_id IS NOT NULL, c.position, t.position, t.id`,
     )
     .all(source.id) as TaskRow[];
   const now = nowIso();
@@ -87,9 +101,10 @@ export function copyProject(db: DB, source: ProjectRow, options: CopyOptions): n
   const positions = new Map<number, number>();
   const insertTask = db.prepare(
     `INSERT INTO tasks (project_id, column_id, title, description, status, priority, assignee_id, start_date, due_date,
-                        position, created_by, created_at, updated_at, completed_at, recurrence, recurrence_interval)
+                        position, created_by, created_at, updated_at, completed_at, recurrence, recurrence_interval,
+                        parent_id, milestone_id)
      VALUES (@projectId, @columnId, @title, @description, @status, @priority, @assigneeId, @startDate, @dueDate,
-             @position, @createdBy, @now, @now, @completedAt, @recurrence, @interval)`,
+             @position, @createdBy, @now, @now, @completedAt, @recurrence, @interval, @parentId, @milestoneId)`,
   );
   for (const task of tasks) {
     const column = options.resetProgress ? firstOpen : ((task.column_id ? columnMap.get(task.column_id) : undefined) ?? firstOpen);
@@ -113,9 +128,13 @@ export function copyProject(db: DB, source: ProjectRow, options: CopyOptions): n
       completedAt: status === 'done' ? (task.completed_at ?? now) : null,
       recurrence: task.recurrence,
       interval: task.recurrence_interval,
+      // Main tasks come first in the query, so a subtask's parent is always copied already.
+      parentId: task.parent_id !== null ? (taskMap.get(task.parent_id) ?? null) : null,
+      milestoneId: task.milestone_id !== null ? (milestoneMap.get(task.milestone_id) ?? null) : null,
     });
     taskMap.set(task.id, Number(result.lastInsertRowid));
   }
+  for (const [from, to] of taskMap) copyFieldValues(db, from, to, fieldMap);
 
   const ids = JSON.stringify([...taskMap.keys()]);
   const labels = db

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { CircleCheck, Info, X } from 'lucide-react';
 import { StatusGlyph } from './Icons';
 import { Modal } from './Modal';
+import { t } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Toasts
@@ -45,7 +46,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const hostRef = useRef<HTMLDivElement>(null);
 
-  const dismiss = useCallback((id: number) => setToasts((list) => list.filter((t) => t.id !== id)), []);
+  const dismiss = useCallback((id: number) => setToasts((list) => list.filter((item) => item.id !== id)), []);
 
   const push = useCallback(
     (kind: ToastKind, message: string, action?: ToastAction) => {
@@ -80,7 +81,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div ref={hostRef} popover="manual" className="toasts" role="region" aria-label="Notifications">
+      <div ref={hostRef} popover="manual" className="toasts" role="region" aria-label={t('Notifications')}>
         {toasts.map((toast) => (
           <div key={toast.id} className="toast" role={toast.kind === 'error' ? 'alert' : 'status'}>
             {toast.kind === 'success' && <CircleCheck size={17} color="var(--good)" aria-hidden />}
@@ -99,7 +100,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 {toast.action.label}
               </button>
             )}
-            <button type="button" className="icon-btn icon-btn-sm" onClick={() => dismiss(toast.id)} aria-label="Dismiss">
+            <button type="button" className="icon-btn icon-btn-sm" onClick={() => dismiss(toast.id)} aria-label={t('Dismiss')}>
               <X size={14} />
             </button>
           </div>
@@ -158,7 +159,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         footer={
           <>
             <button type="button" className="btn" onClick={() => close(false)}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="button"
@@ -166,7 +167,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               onClick={() => close(true)}
               autoFocus
             >
-              {state?.confirmLabel ?? 'Confirm'}
+              {state?.confirmLabel ?? t('Confirm')}
             </button>
           </>
         }
@@ -204,7 +205,7 @@ export function EmptyState({
 
 export function Spinner({ size = 18 }: { size?: number }) {
   return (
-    <svg className="spinner" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-label="Loading" role="img">
+    <svg className="spinner" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-label={t('Loading')} role="img">
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
       <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
@@ -220,7 +221,7 @@ export function PageLoading() {
 }
 
 export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const message = error instanceof Error ? error.message : 'Something went wrong.';
+  const message = error instanceof Error ? error.message : t('Something went wrong.');
   return (
     <div className="alert alert-error" role="alert">
       <StatusGlyph tone="critical" size={16} />
@@ -228,7 +229,7 @@ export function ErrorNotice({ error, onRetry }: { error: unknown; onRetry?: () =
         <span>{message}</span>
         {onRetry && (
           <button type="button" className="link-button" onClick={onRetry} style={{ alignSelf: 'flex-start' }}>
-            Try again
+            {t('Try again')}
           </button>
         )}
       </div>

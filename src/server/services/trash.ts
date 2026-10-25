@@ -33,6 +33,8 @@ export function listTrash(db: DB, viewer: Viewer): TrashItem[] {
               p.color AS project_color, p.owner_id, p.status AS project_status
          FROM tasks t JOIN projects p ON p.id = t.project_id
         WHERE t.deleted_at IS NOT NULL AND p.deleted_at IS NULL AND ${projectAccessSql('p')}
+          -- Subtasks deleted together with their task come back with it.
+          AND NOT EXISTS (SELECT 1 FROM tasks pt WHERE pt.id = t.parent_id AND pt.deleted_at = t.deleted_at)
         ORDER BY t.deleted_at DESC`,
     )
     .all(params) as {
@@ -78,9 +80,10 @@ export function listTrash(db: DB, viewer: Viewer): TrashItem[] {
   return items.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
 }
 
-/** Removes a task from the trash for good, with its attached files. */
+/** Removes a task from the trash for good, with its subtasks and attached files. */
 export function destroyTask(ctx: AppContext, taskId: number): void {
-  const files = storedNamesForTasks(ctx.db, [taskId]);
+  const children = (ctx.db.prepare('SELECT id FROM tasks WHERE parent_id = ?').all(taskId) as { id: number }[]).map((r) => r.id);
+  const files = storedNamesForTasks(ctx.db, [taskId, ...children]);
   deleteTask(ctx.db, taskId);
   removeAttachmentFiles(ctx.config.attachmentsDir, files);
 }

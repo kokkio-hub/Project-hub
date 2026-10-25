@@ -1,24 +1,30 @@
 import type { Notification } from './types.js';
+import { english, type Translator } from './i18n/core.js';
 
 /** One plain sentence per notification, used in emails (the app styles its own). */
-export function describeNotification(n: Pick<Notification, 'type' | 'data'>, actorName: string | null): string {
-  const actor = actorName ?? 'Someone';
-  const task = `“${n.data.taskTitle ?? 'a task'}”`;
+export function describeNotification(
+  n: Pick<Notification, 'type' | 'data'>,
+  actorName: string | null,
+  tr: Translator = english,
+): string {
+  const actor = actorName ?? tr.t('Someone');
+  const task = `“${n.data.taskTitle ?? tr.t('a task')}”`;
+  const excerpt = n.data.excerpt ? `: ${n.data.excerpt}` : '';
   switch (n.type) {
     case 'assigned':
-      return `${actor} assigned ${task} to you`;
+      return tr.t('{actor} assigned {task} to you', { actor, task });
     case 'mentioned':
-      return `${actor} mentioned you on ${task}${n.data.excerpt ? `: ${n.data.excerpt}` : ''}`;
+      return tr.t('{actor} mentioned you on {task}', { actor, task }) + excerpt;
     case 'commented':
-      return `${actor} commented on ${task}${n.data.excerpt ? `: ${n.data.excerpt}` : ''}`;
+      return tr.t('{actor} commented on {task}', { actor, task }) + excerpt;
     case 'completed':
-      return `${actor} completed ${task}`;
+      return tr.t('{actor} completed {task}', { actor, task });
     case 'unblocked':
-      return `${task} is ready to start: everything it was waiting for is done`;
+      return tr.t('{task} is ready to start: everything it was waiting for is done', { task });
     case 'due_soon':
-      return `${task} is due tomorrow`;
+      return tr.t('{task} is due tomorrow', { task });
     default:
-      return `${actor} made a change to ${task}`;
+      return tr.t('{actor} changed {task}', { actor, task });
   }
 }
 

@@ -6,12 +6,14 @@ import { attachmentUrl, useAttachments, useDeleteAttachment, useUploadAttachment
 import { useAppStatus } from '../../api/queries';
 import { Spinner, useConfirm, useToast } from '../../components/Feedback';
 import { formatDateTime } from '../../lib/format';
+import { currentLocale, t } from '../../i18n';
 
 export function formatBytes(bytes: number): string {
+  const one = (n: number) => n.toLocaleString(currentLocale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 });
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes < 1024 * 1024 * 1024) return `${one(bytes / 1024 / 1024)} MB`;
+  return `${one(bytes / 1024 / 1024 / 1024)} GB`;
 }
 
 function iconFor(a: Attachment) {
@@ -48,14 +50,14 @@ export function Attachments({
   const send = async (files: File[]) => {
     for (const file of files) {
       if (limit && file.size > limit) {
-        toast.error(`“${file.name}” is too big. Files can be at most ${formatBytes(limit)}.`);
+        toast.error(t('“{name}” is too big. Files can be at most {size}.', { name: file.name, size: formatBytes(limit) }));
         continue;
       }
       setUploading((n) => n + 1);
       try {
         await upload.mutateAsync(file);
       } catch (error) {
-        toast.error(`Couldn't upload “${file.name}”: ${errorMessage(error)}`);
+        toast.error(t('Couldn’t upload “{name}”: {error}', { name: file.name, error: errorMessage(error) }));
       } finally {
         setUploading((n) => n - 1);
       }
@@ -63,7 +65,7 @@ export function Attachments({
   };
 
   const del = async (a: Attachment) => {
-    const ok = await confirm({ title: 'Remove this file?', message: `“${a.filename}” will be deleted.`, confirmLabel: 'Remove', danger: true });
+    const ok = await confirm({ title: t('Remove this file?'), message: t('“{filename}” will be deleted.', { filename: a.filename }), confirmLabel: t('Remove'), danger: true });
     if (ok) remove.mutate(a.id, { onError: (e) => toast.error(errorMessage(e)) });
   };
 
@@ -99,7 +101,7 @@ export function Attachments({
       }}
     >
       <h3 className="section-title">
-        Files {count > 0 && <span className="muted">{count}</span>}
+        {t('Files')} {count > 0 && <span className="muted">{count}</span>}
         {uploading > 0 && <Spinner size={14} />}
       </h3>
       {isPending ? (
@@ -114,7 +116,7 @@ export function Attachments({
                     <img src={attachmentUrl(a.id)} alt={a.filename} loading="lazy" />
                   </a>
                   {canDelete(a) && !readOnly && (
-                    <button type="button" className="icon-btn icon-btn-sm thumb-remove" onClick={() => void del(a)} aria-label={`Remove ${a.filename}`}>
+                    <button type="button" className="icon-btn icon-btn-sm thumb-remove" onClick={() => void del(a)} aria-label={t('Remove {filename}', { filename: a.filename })}>
                       <Trash2 size={13} />
                     </button>
                   )}
@@ -136,11 +138,11 @@ export function Attachments({
                       {formatBytes(a.size)}
                       {by ? ` · ${by}` : ''}
                     </span>
-                    <a href={attachmentUrl(a.id, true)} className="icon-btn icon-btn-sm" aria-label={`Download ${a.filename}`} download>
+                    <a href={attachmentUrl(a.id, true)} className="icon-btn icon-btn-sm" aria-label={t('Download {filename}', { filename: a.filename })} download>
                       <Download size={13} />
                     </a>
                     {canDelete(a) && !readOnly && (
-                      <button type="button" className="icon-btn icon-btn-sm" onClick={() => void del(a)} aria-label={`Remove ${a.filename}`}>
+                      <button type="button" className="icon-btn icon-btn-sm" onClick={() => void del(a)} aria-label={t('Remove {filename}', { filename: a.filename })}>
                         <Trash2 size={13} />
                       </button>
                     )}
@@ -154,9 +156,9 @@ export function Attachments({
       {!readOnly && (
         <div className="dropzone">
           <Paperclip size={14} aria-hidden />
-          <span>Drop files here, paste a screenshot, or</span>
+          <span>{t('Drop files here, paste a screenshot, or')}</span>
           <button type="button" className="link-button" onClick={() => input.current?.click()}>
-            <Upload size={13} aria-hidden /> choose files
+            <Upload size={13} aria-hidden /> {t('choose files')}
           </button>
           <input
             ref={input}

@@ -3,6 +3,7 @@ import { diffDays, localToday } from '../../shared/dates';
 import type { TaskStatus } from '../../shared/types';
 import { formatDate, relativeDay } from '../lib/format';
 import { StatusGlyph } from './Icons';
+import { t } from '../i18n';
 
 /** Due date with urgency: overdue gets the critical glyph, due within two days a clock. */
 export function DueChip({
@@ -22,22 +23,22 @@ export function DueChip({
   if (open && delta < 0) {
     const days = -delta;
     return (
-      <span className="chip chip-overdue" title={`Overdue since ${formatDate(dueDate, today)}`}>
+      <span className="chip chip-overdue" title={t('Overdue since {date}', { date: formatDate(dueDate, today) })}>
         <StatusGlyph tone="critical" size={13} />
-        {days === 1 ? 'Yesterday' : `${days}d overdue`}
+        {days === 1 ? t('Yesterday') : t('{days}d overdue', { days })}
       </span>
     );
   }
   if (open && delta <= 1) {
     return (
-      <span className="chip chip-soon" title={`Due ${formatDate(dueDate, today)}`}>
+      <span className="chip chip-soon" title={t('Due {date}', { date: formatDate(dueDate, today) })}>
         {showIcon && <Clock size={13} aria-hidden />}
         <span style={{ color: 'var(--text)', fontWeight: 560 }}>{relativeDay(dueDate, today)}</span>
       </span>
     );
   }
   return (
-    <span className="chip" title={`Due ${formatDate(dueDate, today)}`}>
+    <span className="chip" title={t('Due {date}', { date: formatDate(dueDate, today) })}>
       {showIcon && <CalendarDays size={13} aria-hidden />}
       {relativeDay(dueDate, today)}
     </span>

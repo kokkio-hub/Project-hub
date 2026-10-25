@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
+  Bookmark,
+  CalendarDays,
   ChartGantt,
   Check,
   FolderKanban,
@@ -22,6 +24,8 @@ import {
 import { USER_ROLE_LABELS } from '../../shared/types';
 import { useLiveUpdates } from '../api/live';
 import { useLogout, useProjects, useTasks } from '../api/queries';
+import { useViews } from '../api/planning';
+import { viewPath } from '../features/planning/views';
 import { canChangeWork, useAppName, useCurrentUser } from '../auth/session';
 import { NotificationsButton } from '../features/notifications/NotificationsButton';
 import { ProjectFormModal } from '../features/projects/ProjectFormModal';
@@ -32,6 +36,7 @@ import { useTheme, type ThemePreference } from '../lib/theme';
 import { Avatar } from './Avatar';
 import { ProjectDot } from './Icons';
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from './Menu';
+import { N_, t } from '../i18n';
 
 export function AppLayout() {
   const appName = useAppName();
@@ -63,7 +68,7 @@ export function AppLayout() {
       <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} aria-hidden />
       <div className="main">
         <header className="topbar">
-          <button type="button" className="icon-btn" onClick={() => setNavOpen(true)} aria-label="Open navigation">
+          <button type="button" className="icon-btn" onClick={() => setNavOpen(true)} aria-label={t('Open navigation')}>
             <MenuIcon size={20} />
           </button>
           <span className="brand-mark" aria-hidden style={{ width: 24, height: 24, borderRadius: 6 }}>
@@ -71,7 +76,7 @@ export function AppLayout() {
           </span>
           <span className="truncate">{appName}</span>
           <span className="spacer" />
-          <button type="button" className="icon-btn" onClick={openPalette} aria-label="Search">
+          <button type="button" className="icon-btn" onClick={openPalette} aria-label={t('Search')}>
             <Search size={18} />
           </button>
           <NotificationsButton />
@@ -100,9 +105,14 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
   const { data: projects } = useProjects();
   const { data: myOpenTasks } = useTasks({ assigneeId: 'me', status: 'todo,in_progress,review' });
   const visibleProjects = (projects ?? []).filter((p) => p.status === 'active' || p.status === 'on_hold');
+  const { views } = useViews();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const activeSaved = Number(searchParams.get('saved'));
+  const projectNames = new Map((projects ?? []).map((p) => [p.id, p.name]));
 
   return (
-    <aside className="sidebar" aria-label="Main navigation">
+    <aside className="sidebar" aria-label={t('Main navigation')}>
       <div className="sidebar-top">
         <NavLink to="/" className="sidebar-brand">
           <span className="brand-mark" aria-hidden>
@@ -115,42 +125,45 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
 
       <button type="button" className="sidebar-search" onClick={onSearch}>
         <Search size={15} aria-hidden />
-        <span>Search</span>
+        <span>{t('Search')}</span>
         <span className="kbd">{isMac ? '⌘' : 'Ctrl'} K</span>
       </button>
 
       <nav className="sidebar-nav">
         <NavLink to="/" end className="nav-link">
-          <LayoutDashboard size={17} aria-hidden /> Dashboard
+          <LayoutDashboard size={17} aria-hidden /> {t('Dashboard')}
         </NavLink>
         <NavLink to="/my-tasks" className="nav-link">
-          <ListTodo size={17} aria-hidden /> My tasks
+          <ListTodo size={17} aria-hidden /> {t('My tasks')}
           {myOpenTasks && myOpenTasks.length > 0 && (
-            <span className="nav-count" aria-label={`${myOpenTasks.length} open`}>
+            <span className="nav-count" aria-label={t('{count} open', { count: myOpenTasks.length })}>
               {myOpenTasks.length}
             </span>
           )}
         </NavLink>
         <NavLink to="/projects" end className="nav-link">
-          <FolderKanban size={17} aria-hidden /> Projects
+          <FolderKanban size={17} aria-hidden /> {t('Projects')}
         </NavLink>
         <NavLink to="/timeline" className="nav-link">
-          <ChartGantt size={17} aria-hidden /> Timeline
+          <ChartGantt size={17} aria-hidden /> {t('Timeline')}
+        </NavLink>
+        <NavLink to="/calendar" className="nav-link">
+          <CalendarDays size={17} aria-hidden /> {t('Calendar')}
         </NavLink>
         <NavLink to="/team" className="nav-link">
-          <Users size={17} aria-hidden /> Team
+          <Users size={17} aria-hidden /> {t('Team')}
         </NavLink>
       </nav>
 
       <div className="sidebar-section">
-        Projects
+        {t('Projects')}
         {canCreate && (
-          <button type="button" className="icon-btn icon-btn-sm" onClick={onNewProject} aria-label="New project" title="New project">
+          <button type="button" className="icon-btn icon-btn-sm" onClick={onNewProject} aria-label={t('New project')} title={t('New project')}>
             <Plus size={15} />
           </button>
         )}
       </div>
-      <nav className="sidebar-projects" aria-label="Projects">
+      <nav className="sidebar-projects" aria-label={t('Projects')}>
         {visibleProjects.map((project) => (
           <NavLink key={project.id} to={`/projects/${project.id}`} className="nav-link">
             <ProjectDot color={project.color} />
@@ -159,19 +172,43 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
         ))}
         {projects && visibleProjects.length === 0 && canCreate && (
           <button type="button" className="nav-link" onClick={onNewProject} style={{ border: 'none', background: 'none', width: '100%' }}>
-            <Plus size={15} aria-hidden /> Create a project
+            <Plus size={15} aria-hidden /> {t('Create a project')}
           </button>
         )}
       </nav>
 
+      {views.length > 0 && (
+        <>
+          <div className="sidebar-section">{t('Saved views')}</div>
+          <nav className="sidebar-projects" aria-label={t('Saved views')}>
+            {views.map((v) => {
+              const to = viewPath(v.projectId, v.view, v.id);
+              const current = activeSaved === v.id && location.pathname === to.split('?')[0];
+              return (
+                <Link
+                  key={v.id}
+                  to={to}
+                  className={`nav-link ${current ? 'active' : ''}`}
+                  aria-current={current ? 'page' : undefined}
+                  title={projectNames.has(v.projectId) ? `${projectNames.get(v.projectId)} · ${v.name}` : v.name}
+                >
+                  <Bookmark size={15} aria-hidden />
+                  <span className="truncate">{v.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </>
+      )}
+
       {user.role !== 'guest' && (
-        <nav className="sidebar-nav sidebar-extra" aria-label="More">
+        <nav className="sidebar-nav sidebar-extra" aria-label={t('More')}>
           <NavLink to="/trash" className="nav-link">
-            <Trash2 size={16} aria-hidden /> Trash
+            <Trash2 size={16} aria-hidden /> {t('Trash')}
           </NavLink>
           {user.role === 'admin' && (
             <NavLink to="/settings" className="nav-link">
-              <SlidersHorizontal size={16} aria-hidden /> Workspace settings
+              <SlidersHorizontal size={16} aria-hidden /> {t('Workspace settings')}
             </NavLink>
           )}
         </nav>
@@ -185,9 +222,9 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
 }
 
 const THEMES: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [
-  { value: 'system', label: 'Match system', icon: <Monitor size={16} /> },
-  { value: 'light', label: 'Light', icon: <Sun size={16} /> },
-  { value: 'dark', label: 'Dark', icon: <Moon size={16} /> },
+  { value: 'system', label: N_('Match system'), icon: <Monitor size={16} /> },
+  { value: 'light', label: N_('Light'), icon: <Sun size={16} /> },
+  { value: 'dark', label: N_('Dark'), icon: <Moon size={16} /> },
 ];
 
 function UserMenu({ user }: { user: ReturnType<typeof useCurrentUser> }) {
@@ -203,26 +240,26 @@ function UserMenu({ user }: { user: ReturnType<typeof useCurrentUser> }) {
           <Avatar user={user} size="md" title={null} />
           <span className="who">
             <strong className="truncate">{user.name}</strong>
-            <span className="truncate">{user.title || USER_ROLE_LABELS[user.role]}</span>
+            <span className="truncate">{user.title || t(USER_ROLE_LABELS[user.role])}</span>
           </span>
           <Settings size={16} className="muted" aria-hidden />
         </button>
       )}
     >
       <MenuItem icon={<Settings size={16} />} onSelect={() => navigate('/account')}>
-        Account settings
+        {t('Account settings')}
       </MenuItem>
       <MenuSeparator />
-      <MenuLabel>Theme</MenuLabel>
-      {THEMES.map((t) => (
-        <MenuItem key={t.value} icon={t.icon} onSelect={() => setTheme(t.value)}>
-          {t.label}
-          {theme === t.value && <Check size={16} style={{ marginLeft: 'auto' }} aria-label="(selected)" />}
+      <MenuLabel>{t('Theme')}</MenuLabel>
+      {THEMES.map((option) => (
+        <MenuItem key={option.value} icon={option.icon} onSelect={() => setTheme(option.value)}>
+          {t(option.label)}
+          {theme === option.value && <Check size={16} style={{ marginLeft: 'auto' }} aria-label={t('(selected)')} />}
         </MenuItem>
       ))}
       <MenuSeparator />
       <MenuItem icon={<LogOut size={16} />} onSelect={() => logout.mutate()}>
-        Sign out
+        {t('Sign out')}
       </MenuItem>
     </Menu>
   );

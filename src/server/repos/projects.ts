@@ -3,7 +3,10 @@ import { nowIso } from '../db/index.js';
 import type { ColorName, Project, ProjectStatus, ProjectVisibility } from '../../shared/types.js';
 import { viewerParams, visibleProjectSql, type Viewer } from '../services/permissions.js';
 import { columnsByProject, insertDefaultColumns } from './columns.js';
+import type { Translator } from '../../shared/i18n/core.js';
 import { labelsByProject } from './labels.js';
+import { fieldsByProject } from './fields.js';
+import { milestonesByProject } from './milestones.js';
 
 export interface ProjectRow {
   id: number;
@@ -50,6 +53,8 @@ function hydrate(db: DB, rows: ProjectWithCountsRow[]): Project[] {
   const columns = columnsByProject(db, ids);
   const labels = labelsByProject(db, ids);
   const members = membersByProject(db, ids);
+  const milestones = milestonesByProject(db, ids);
+  const fields = fieldsByProject(db, ids);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -75,6 +80,8 @@ function hydrate(db: DB, rows: ProjectWithCountsRow[]): Project[] {
     columns: columns.get(row.id) ?? [],
     labels: labels.get(row.id) ?? [],
     memberIds: members.get(row.id) ?? [],
+    milestones: milestones.get(row.id) ?? [],
+    fields: fields.get(row.id) ?? [],
   }));
 }
 
@@ -132,7 +139,7 @@ export interface ProjectInput {
 }
 
 /** Creates a project with the standard four board columns (unless `withColumns` is false). */
-export function insertProject(db: DB, input: ProjectInput, options: { withColumns?: boolean } = {}): number {
+export function insertProject(db: DB, input: ProjectInput, options: { withColumns?: boolean; tr?: Translator } = {}): number {
   const now = nowIso();
   const result = db
     .prepare(
@@ -155,7 +162,7 @@ export function insertProject(db: DB, input: ProjectInput, options: { withColumn
       now,
     });
   const id = Number(result.lastInsertRowid);
-  if (options.withColumns !== false) insertDefaultColumns(db, id);
+  if (options.withColumns !== false) insertDefaultColumns(db, id, options.tr);
   return id;
 }
 

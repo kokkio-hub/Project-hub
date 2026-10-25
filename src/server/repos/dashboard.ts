@@ -6,6 +6,7 @@ import { viewerParams, WORK_PROJECT_IDS, type Viewer } from '../services/permiss
 import { listActivity } from './activity.js';
 import { listProjects } from './projects.js';
 import { listOpenTasksFor } from './tasks.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 import { listUsersFor } from './users.js';
 
 const THROUGHPUT_WEEKS = 8;
@@ -23,7 +24,7 @@ const HEALTH_ORDER: Record<ProjectHealth, number> = { off_track: 0, at_risk: 1, 
  * @param today the viewer's local date (YYYY-MM-DD)
  * @param tzOffsetMinutes the viewer's offset from UTC, used to bucket completion timestamps into local days
  */
-export function buildDashboard(db: DB, viewer: Viewer, today: string, tzOffsetMinutes: number): DashboardData {
+export function buildDashboard(db: DB, viewer: Viewer, today: string, tzOffsetMinutes: number, tr: Translator = english): DashboardData {
   const vp = viewerParams(viewer);
   const weekStart = startOfWeek(today);
   const weekEnd = addDays(weekStart, 6);
@@ -68,6 +69,7 @@ export function buildDashboard(db: DB, viewer: Viewer, today: string, tzOffsetMi
           overdue: p.counts.overdue,
         },
         today,
+        tr,
       );
       return {
         id: p.id,

@@ -1,6 +1,8 @@
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { Check, Eye, EyeOff } from 'lucide-react';
 import { COLOR_NAMES, type ColorName, type User } from '../../shared/types';
+import { t } from '../i18n';
+import { colorLabel } from '../lib/colors';
 
 export function Field({
   label,
@@ -43,7 +45,7 @@ export function PasswordInput(props: InputHTMLAttributes<HTMLInputElement>) {
         type="button"
         className="icon-btn"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-label={visible ? t('Hide password') : t('Show password')}
         aria-pressed={visible}
       >
         {visible ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -74,8 +76,8 @@ export function ColorPicker({
           type="button"
           role="radio"
           aria-checked={value === color}
-          aria-label={color}
-          title={color[0]!.toUpperCase() + color.slice(1)}
+          aria-label={colorLabel(color)}
+          title={colorLabel(color)}
           className="swatch"
           style={{ background: `var(--cat-${color})`, color: `var(--on-cat-${color})` }}
           onClick={() => onChange(color)}
@@ -120,7 +122,7 @@ export function UserSelect({
       {options.map((u) => (
         <option key={u.id} value={u.id}>
           {u.name}
-          {!u.isActive ? ' (deactivated)' : u.invitePending ? ' (invited)' : ''}
+          {!u.isActive ? ` ${t('(deactivated)')}` : u.invitePending ? ` ${t('(invited)')}` : ''}
         </option>
       ))}
     </select>

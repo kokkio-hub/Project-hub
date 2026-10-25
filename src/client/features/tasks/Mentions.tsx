@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type TextareaHTMLAttributes
 import { splitMentions } from '../../../shared/notifications';
 import type { User } from '../../../shared/types';
 import { Avatar } from '../../components/Avatar';
+import { t } from '../../i18n';
 
 /** A comment's text with @mentions of known people highlighted. */
 export function MentionText({ text, people }: { text: string; people: User[] }) {
@@ -129,7 +130,7 @@ export function MentionTextarea({ value, onChange, people, textareaRef, onKeyDow
         }}
       />
       {open && (
-        <ul className="mention-list" role="listbox" aria-label="People to mention">
+        <ul className="mention-list" role="listbox" aria-label={t('People to mention')}>
           {suggestions.map((p, i) => (
             <li key={p.id}>
               <button

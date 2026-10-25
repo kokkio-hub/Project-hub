@@ -7,19 +7,20 @@ import { Field, UserSelect } from '../../components/Form';
 import { Modal } from '../../components/Modal';
 import { LabelList, LabelPicker } from '../labels/Labels';
 import { assignableUsers, RepeatSelect } from './TaskDrawer';
+import { t } from '../../i18n';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   /** Fixed project; when omitted the form shows a project picker. */
   projectId?: number;
-  defaults?: { status?: TaskStatus; assigneeId?: number | null };
+  defaults?: { status?: TaskStatus; assigneeId?: number | null; dueDate?: string };
   onCreated?: (taskId: number) => void;
 }
 
 export function NewTaskModal({ open, onClose, projectId, defaults, onCreated }: Props) {
   return (
-    <Modal open={open} onClose={onClose} title="New task" wide>
+    <Modal open={open} onClose={onClose} title={t('New task')} wide>
       {open && <NewTaskForm projectId={projectId} defaults={defaults} onClose={onClose} onCreated={onCreated} />}
     </Modal>
   );
@@ -40,7 +41,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
     priority: 'medium' as TaskPriority,
     assigneeId: defaults?.assigneeId ?? (null as number | null),
     startDate: '',
-    dueDate: '',
+    dueDate: defaults?.dueDate ?? '',
     labelIds: [] as number[],
     recurrence: null as Recurrence | null,
   });
@@ -57,7 +58,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
   useEffect(() => {
     if (errorShown) resetMutation();
   }, [form]);
-  const dateError = form.startDate && form.dueDate && form.startDate > form.dueDate ? 'Must be on or after the start date' : undefined;
+  const dateError = form.startDate && form.dueDate && form.startDate > form.dueDate ? t('Must be on or after the start date') : undefined;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -77,7 +78,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
       },
       {
         onSuccess: (task) => {
-          toast.success('Task created');
+          toast.success(t('Task created'));
           onCreated?.(task.id);
           if (addAnother) setForm((f) => ({ ...f, title: '', description: '' }));
           else onClose();
@@ -95,19 +96,19 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               <ErrorNotice error={create.error} />
             </div>
           )}
-          <Field label="Title" htmlFor="task-new-title" error={fields.title} className="span-2">
+          <Field label={t('Title')} htmlFor="task-new-title" error={fields.title} className="span-2">
             <input
               id="task-new-title"
               className="input"
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="What needs to be done?"
+              placeholder={t('What needs to be done?')}
               maxLength={200}
               autoFocus
             />
           </Field>
           {projectId === undefined && (
-            <Field label="Project" htmlFor="task-new-project" error={fields.projectId} className="span-2">
+            <Field label={t('Project')} htmlFor="task-new-project" error={fields.projectId} className="span-2">
               <select
                 id="task-new-project"
                 className="select"
@@ -122,17 +123,17 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               </select>
             </Field>
           )}
-          <Field label="Description" htmlFor="task-new-description" className="span-2">
+          <Field label={t('Description')} htmlFor="task-new-description" className="span-2">
             <textarea
               id="task-new-description"
               className="textarea"
               rows={3}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="Optional details"
+              placeholder={t('Optional details')}
             />
           </Field>
-          <Field label="Column" htmlFor="task-new-column">
+          <Field label={t('Column')} htmlFor="task-new-column">
             <select
               id="task-new-column"
               className="select"
@@ -146,7 +147,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               ))}
             </select>
           </Field>
-          <Field label="Priority" htmlFor="task-new-priority">
+          <Field label={t('Priority')} htmlFor="task-new-priority">
             <select
               id="task-new-priority"
               className="select"
@@ -155,12 +156,12 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
             >
               {TASK_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
-                  {TASK_PRIORITY_LABELS[p]}
+                  {t(TASK_PRIORITY_LABELS[p])}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="Assignee" htmlFor="task-new-assignee" error={fields.assigneeId} className="span-2">
+          <Field label={t('Assignee')} htmlFor="task-new-assignee" error={fields.assigneeId} className="span-2">
             <UserSelect
               id="task-new-assignee"
               users={assignableUsers(users, project)}
@@ -168,7 +169,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               onChange={(assigneeId) => setForm({ ...form, assigneeId })}
             />
           </Field>
-          <Field label="Start date" htmlFor="task-new-start">
+          <Field label={t('Start date')} htmlFor="task-new-start">
             <input
               id="task-new-start"
               type="date"
@@ -177,7 +178,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
             />
           </Field>
-          <Field label="Due date" htmlFor="task-new-due" error={dateError ?? fields.dueDate}>
+          <Field label={t('Due date')} htmlFor="task-new-due" error={dateError ?? fields.dueDate}>
             <input
               id="task-new-due"
               type="date"
@@ -187,11 +188,11 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
               aria-invalid={Boolean(dateError)}
             />
           </Field>
-          <Field label="Repeats" htmlFor="task-new-repeat" hint={form.recurrence ? 'When it’s done, the next one is created.' : undefined}>
+          <Field label={t('Repeats')} htmlFor="task-new-repeat" hint={form.recurrence ? t('When it’s done, the next one is created.') : undefined}>
             <RepeatSelect id="task-new-repeat" className="select" value={form.recurrence} onChange={(recurrence) => setForm({ ...form, recurrence })} />
           </Field>
           <div className="field">
-            <span className="field-label">Labels</span>
+            <span className="field-label">{t('Labels')}</span>
             <div className="row" style={{ gap: 8, flexWrap: 'wrap', minHeight: 36 }}>
               <LabelList ids={form.labelIds} labels={project?.labels ?? []} size="md" />
               {project && (
@@ -204,14 +205,14 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
       <div className="modal-footer">
         <label className="row" style={{ gap: 6, marginRight: 'auto', fontSize: 'var(--text-sm)', color: 'var(--text-2)', cursor: 'pointer' }}>
           <input type="checkbox" className="checkbox" checked={addAnother} onChange={(e) => setAddAnother(e.target.checked)} />
-          Create another
+          {t('Create another')}
         </label>
         <button type="button" className="btn" onClick={onClose}>
-          Cancel
+          {t('Cancel')}
         </button>
         <button type="submit" className="btn btn-primary" disabled={create.isPending || !form.title.trim() || !chosenProject}>
           {create.isPending && <Spinner size={16} />}
-          Create task
+          {t('Create task')}
         </button>
       </div>
     </form>

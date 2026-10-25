@@ -18,11 +18,12 @@ import {
   type InviteLinkInfo,
 } from '../features/team/UserDialogs';
 import { firstName, timeAgo } from '../lib/format';
+import { t } from '../i18n';
 
 type PasswordInfo = { name: string; email: string; password: string; reset: boolean };
 
 export function TeamPage() {
-  useDocumentTitle('Team');
+  useDocumentTitle(t('Team'));
   const me = useCurrentUser();
   const isAdmin = me.role === 'admin';
   const users = useUsers();
@@ -37,7 +38,7 @@ export function TeamPage() {
 
   const openCounts = useMemo(() => {
     const counts = new Map<number, number>();
-    for (const t of openTasks.data ?? []) if (t.assigneeId) counts.set(t.assigneeId, (counts.get(t.assigneeId) ?? 0) + 1);
+    for (const task of openTasks.data ?? []) if (task.assigneeId) counts.set(task.assigneeId, (counts.get(task.assigneeId) ?? 0) + 1);
     return counts;
   }, [openTasks.data]);
 
@@ -58,9 +59,9 @@ export function TeamPage() {
         added: true,
       });
     } else if (result.emailed) {
-      toast.success(`Invitation emailed to ${user.email}`);
+      toast.success(t('Invitation emailed to {email}', { email: user.email }));
     } else {
-      toast.success(`${user.name} can now sign in with the password you chose`);
+      toast.success(t('{name} can now sign in with the password you chose', { name: user.name }));
     }
   };
 
@@ -68,23 +69,23 @@ export function TeamPage() {
     <div className="page">
       <header className="page-header">
         <div className="titles">
-          <h1>Team</h1>
+          <h1>{t('Team')}</h1>
           <p className="subtitle">
             {isAdmin
-              ? 'Invite people, manage roles and reset passwords. Everyone signs in with their own account.'
-              : 'Everyone who works in this workspace.'}
+              ? t('Invite people, manage roles and reset passwords. Everyone signs in with their own account.')
+              : t('Everyone who works in this workspace.')}
           </p>
         </div>
         <div className="actions">
           {inactiveCount > 0 && (
             <label className="row" style={{ gap: 6, fontSize: 'var(--text-sm)', color: 'var(--text-2)', cursor: 'pointer' }}>
               <input type="checkbox" className="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-              Show deactivated ({inactiveCount})
+              {t('Show deactivated ({count})', { count: inactiveCount })}
             </label>
           )}
           {isAdmin && (
             <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
-              <UserPlus size={16} /> Add person
+              <UserPlus size={16} /> {t('Add person')}
             </button>
           )}
         </div>
@@ -99,11 +100,11 @@ export function TeamPage() {
           <table className="table team-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th className="num">Open tasks</th>
-                {isAdmin && <th>Last sign-in</th>}
-                {isAdmin && <th aria-label="Actions" />}
+                <th>{t('Name')}</th>
+                <th>{t('Role')}</th>
+                <th className="num">{t('Open tasks')}</th>
+                {isAdmin && <th>{t('Last sign-in')}</th>}
+                {isAdmin && <th aria-label={t('Actions')} />}
               </tr>
             </thead>
             <tbody>
@@ -115,16 +116,16 @@ export function TeamPage() {
                       <div style={{ minWidth: 0 }}>
                         <div className="row" style={{ gap: 8, flexWrap: 'wrap', rowGap: 2 }}>
                           <strong style={{ fontWeight: 600 }}>{user.name}</strong>
-                          {user.id === me.id && <span className="badge">You</span>}
-                          {!user.isActive && <span className="badge">Deactivated</span>}
+                          {user.id === me.id && <span className="badge">{t('You')}</span>}
+                          {!user.isActive && <span className="badge">{t('Deactivated')}</span>}
                           {user.isActive && user.invitePending && (
-                            <span className="badge badge-accent" title="Hasn't accepted the invitation yet">
-                              Invited
+                            <span className="badge badge-accent" title={t('Hasn’t accepted the invitation yet')}>
+                              {t('Invited')}
                             </span>
                           )}
                           {user.isActive && !user.invitePending && user.mustChangePassword && isAdmin && (
-                            <span className="badge" title="Hasn't replaced the temporary password yet">
-                              Temporary password
+                            <span className="badge" title={t('Hasn’t replaced the temporary password yet')}>
+                              {t('Temporary password')}
                             </span>
                           )}
                         </div>
@@ -139,9 +140,9 @@ export function TeamPage() {
                     <span className="status-label">
                       {user.role === 'admin' && <ShieldCheck size={15} className="secondary" aria-hidden />}
                       {user.role === 'guest' && <Eye size={15} className="secondary" aria-hidden />}
-                      {USER_ROLE_LABELS[user.role]}
+                      {t(USER_ROLE_LABELS[user.role])}
                       {isAdmin && user.twoFactorEnabled && (
-                        <span className="badge" title="Signs in with a code from an authenticator app">
+                        <span className="badge" title={t('Signs in with a code from an authenticator app')}>
                           2FA
                         </span>
                       )}
@@ -182,16 +183,18 @@ export function TeamPage() {
 
 /** When someone last signed in, or where their invitation stands. */
 function lastSignIn(user: User): ReactNode {
-  if (!user.invitePending) return user.lastLoginAt ? timeAgo(user.lastLoginAt) : 'Never';
-  if (!user.isActive) return 'Never';
+  if (!user.invitePending) return user.lastLoginAt ? timeAgo(user.lastLoginAt) : t('Never');
+  if (!user.isActive) return t('Never');
   if (!user.invite) {
     return (
-      <span className="status-label" title="The invitation link has expired. Send a new invitation.">
-        <StatusGlyph tone="warning" /> Invitation expired
+      <span className="status-label" title={t('The invitation link has expired. Send a new invitation.')}>
+        <StatusGlyph tone="warning" /> {t('Invitation expired')}
       </span>
     );
   }
-  return user.invite.emailedAt ? `Invited ${timeAgo(user.invite.emailedAt)}` : `Link created ${timeAgo(user.invite.createdAt)}`;
+  return user.invite.emailedAt
+    ? t('Invited {time}', { time: timeAgo(user.invite.emailedAt) })
+    : t('Link created {time}', { time: timeAgo(user.invite.createdAt) });
 }
 
 function UserActions({
@@ -222,7 +225,7 @@ function UserActions({
       {
         onSuccess: (result: InviteResponse) => {
           if (result.emailed) {
-            toast.success(`New invitation emailed to ${user.email}`);
+            toast.success(t('New invitation emailed to {email}', { email: user.email }));
           } else if (result.inviteUrl) {
             onInviteLink({
               name: user.name,
@@ -241,28 +244,28 @@ function UserActions({
 
   const revoke = async () => {
     const ok = await confirm({
-      title: `Revoke ${user.name}'s invitation?`,
-      message: `The invitation link stops working and ${first} is removed from the team. Tasks assigned to ${first} become unassigned. You can invite them again later.`,
-      confirmLabel: 'Revoke invitation',
+      title: t('Revoke {name}’s invitation?', { name: user.name }),
+      message: t('The invitation link stops working and {name} is removed from the team. Tasks assigned to {name} become unassigned. You can invite them again later.', { name: first }),
+      confirmLabel: t('Revoke invitation'),
       danger: true,
     });
     if (!ok) return;
     cancelInvite.mutate(user.id, {
-      onSuccess: () => toast.success(`Invitation for ${user.name} revoked`),
+      onSuccess: () => toast.success(t('Invitation for {name} revoked', { name: user.name })),
       onError: (e) => toast.error(errorMessage(e)),
     });
   };
 
   const turnOff2fa = async () => {
     const ok = await confirm({
-      title: `Turn off two-factor sign-in for ${user.name}?`,
-      message: `Only do this when ${first} lost their phone and recovery codes, and you're sure it's really them asking. They can then sign in with just their password, and set it up again.`,
-      confirmLabel: 'Turn off',
+      title: t('Turn off two-factor sign-in for {name}?', { name: user.name }),
+      message: t('Only do this when {name} lost their phone and recovery codes, and you’re sure it’s really them asking. They can then sign in with just their password, and set it up again.', { name: first }),
+      confirmLabel: t('Turn off'),
       danger: true,
     });
     if (!ok) return;
     disable2fa.mutate(user.id, {
-      onSuccess: () => toast.success(`Two-factor sign-in is off for ${user.name}`),
+      onSuccess: () => toast.success(t('Two-factor sign-in is off for {name}', { name: user.name })),
       onError: (e) => toast.error(errorMessage(e)),
     });
   };
@@ -270,10 +273,10 @@ function UserActions({
   const setActive = async (isActive: boolean) => {
     if (!isActive) {
       const ok = await confirm({
-        title: `Deactivate ${user.name}?`,
+        title: t('Deactivate {name}?', { name: user.name }),
         message:
-          'They are signed out immediately and can no longer sign in. Their tasks, comments and history stay. You can reactivate the account at any time.',
-        confirmLabel: 'Deactivate',
+          t('They are signed out immediately and can no longer sign in. Their tasks, comments and history stay. You can reactivate the account at any time.'),
+        confirmLabel: t('Deactivate'),
         danger: true,
       });
       if (!ok) return;
@@ -281,7 +284,7 @@ function UserActions({
     update.mutate(
       { id: user.id, patch: { isActive } },
       {
-        onSuccess: () => toast.success(isActive ? `${user.name} can sign in again` : `${user.name} has been deactivated`),
+        onSuccess: () => toast.success(isActive ? t('{name} can sign in again', { name: user.name }) : t('{name} has been deactivated', { name: user.name })),
         onError: (e) => toast.error(errorMessage(e)),
       },
     );
@@ -290,34 +293,34 @@ function UserActions({
   return (
     <Menu
       trigger={(props) => (
-        <button type="button" className="icon-btn" aria-label={`Actions for ${user.name}`} {...props}>
+        <button type="button" className="icon-btn" aria-label={t('Actions for {name}', { name: user.name })} {...props}>
           <Ellipsis size={18} />
         </button>
       )}
     >
       <MenuItem icon={<Pencil size={16} />} onSelect={onEdit}>
-        Edit details
+        {t('Edit details')}
       </MenuItem>
       {user.invitePending ? (
         <>
           {user.isActive && emailEnabled && (
             <MenuItem icon={<Mail size={16} />} onSelect={() => invite(true)} disabled={sendInvite.isPending}>
-              {user.invite?.emailedAt ? 'Resend invitation email' : 'Email an invitation'}
+              {user.invite?.emailedAt ? t('Resend invitation email') : t('Email an invitation')}
             </MenuItem>
           )}
           {user.isActive && (
             <MenuItem icon={<Link2 size={16} />} onSelect={() => invite(false)} disabled={sendInvite.isPending}>
-              Get a new invite link
+              {t('Get a new invite link')}
             </MenuItem>
           )}
           <MenuSeparator />
           {!user.isActive && (
             <MenuItem icon={<UserCheck size={16} />} onSelect={() => void setActive(true)}>
-              Reactivate
+              {t('Reactivate')}
             </MenuItem>
           )}
           <MenuItem icon={<X size={16} />} danger onSelect={() => void revoke()}>
-            Revoke invitation
+            {t('Revoke invitation')}
           </MenuItem>
         </>
       ) : (
@@ -325,22 +328,22 @@ function UserActions({
           <>
             {user.isActive && (
               <MenuItem icon={<KeyRound size={16} />} onSelect={onResetPassword}>
-                Reset password…
+                {t('Reset password…')}
               </MenuItem>
             )}
             {user.twoFactorEnabled && (
               <MenuItem icon={<ShieldOff size={16} />} onSelect={() => void turnOff2fa()}>
-                Turn off two-factor sign-in…
+                {t('Turn off two-factor sign-in…')}
               </MenuItem>
             )}
             <MenuSeparator />
             {user.isActive ? (
               <MenuItem icon={<UserX size={16} />} danger onSelect={() => void setActive(false)}>
-                Deactivate
+                {t('Deactivate')}
               </MenuItem>
             ) : (
               <MenuItem icon={<UserCheck size={16} />} onSelect={() => void setActive(true)}>
-                Reactivate
+                {t('Reactivate')}
               </MenuItem>
             )}
           </>

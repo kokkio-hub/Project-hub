@@ -4,6 +4,8 @@ import { COLOR_NAMES, type ColorName, type Label, type Project } from '../../../
 import { errorMessage } from '../../api/client';
 import { useCreateLabel, useDeleteLabel, useUpdateLabel } from '../../api/board';
 import { useConfirm, useToast } from '../../components/Feedback';
+import { t } from '../../i18n';
+import { colorLabel } from '../../lib/colors';
 
 /** Rename, recolour, add and remove a project's labels. Changes save straight away. */
 export function LabelManager({ project }: { project: Project }) {
@@ -34,29 +36,29 @@ export function LabelManager({ project }: { project: Project }) {
           className="input input-sm"
           value={name}
           maxLength={40}
-          placeholder="New label, e.g. Bug"
-          aria-label="New label name"
+          placeholder={t('New label, e.g. Bug')}
+          aria-label={t('New label name')}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') add(e);
           }}
         />
         <button type="button" className="btn btn-sm" onClick={() => add()} disabled={!name.trim() || create.isPending}>
-          <Plus size={14} /> Add
+          <Plus size={14} /> {t('Add')}
         </button>
       </div>
     </div>
   );
 }
 
-function ColorSelect({ value, onChange }: { value: ColorName; onChange: (c: ColorName) => void }) {
+export function ColorSelect({ value, onChange, label = t('Label colour') }: { value: ColorName; onChange: (c: ColorName) => void; label?: string }) {
   return (
     <span className="color-select">
       <span className="label-dot" style={{ background: `var(--cat-${value})` }} aria-hidden />
-      <select className="select select-sm" value={value} onChange={(e) => onChange(e.target.value as ColorName)} aria-label="Label colour">
+      <select className="select select-sm" value={value} onChange={(e) => onChange(e.target.value as ColorName)} aria-label={label}>
         {COLOR_NAMES.map((c) => (
           <option key={c} value={c}>
-            {c[0]!.toUpperCase() + c.slice(1)}
+            {colorLabel(c)}
           </option>
         ))}
       </select>
@@ -82,9 +84,9 @@ function LabelRow({ label }: { label: Label }) {
 
   const del = async () => {
     const ok = await confirm({
-      title: `Delete the label “${label.name}”?`,
-      message: 'It is taken off every task that has it.',
-      confirmLabel: 'Delete label',
+      title: t('Delete the label “{name}”?', { name: label.name }),
+      message: t('It is taken off every task that has it.'),
+      confirmLabel: t('Delete label'),
       danger: true,
     });
     if (ok) remove.mutate(label.id, { onError: (e) => toast.error(errorMessage(e)) });
@@ -97,7 +99,7 @@ function LabelRow({ label }: { label: Label }) {
         className="input input-sm"
         value={name}
         maxLength={40}
-        aria-label={`Name of label ${label.name}`}
+        aria-label={t('Name of label {name}', { name: label.name })}
         onChange={(e) => setName(e.target.value)}
         onBlur={saveName}
         onKeyDown={(e) => {
@@ -107,7 +109,7 @@ function LabelRow({ label }: { label: Label }) {
           }
         }}
       />
-      <button type="button" className="icon-btn icon-btn-sm" onClick={() => void del()} aria-label={`Delete label ${label.name}`}>
+      <button type="button" className="icon-btn icon-btn-sm" onClick={() => void del()} aria-label={t('Delete label {name}', { name: label.name })}>
         <Trash2 size={14} />
       </button>
     </li>

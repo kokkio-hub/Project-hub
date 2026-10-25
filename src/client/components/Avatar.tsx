@@ -1,6 +1,7 @@
 import { UserRound } from 'lucide-react';
 import type { User } from '../../shared/types';
 import { initials } from '../lib/format';
+import { t } from '../i18n';
 
 type Size = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
@@ -17,9 +18,9 @@ export function Avatar({ user, size = 'md', title }: AvatarProps) {
   if (!user) {
     const iconSize = size === 'xs' ? 11 : size === 'sm' ? 13 : 15;
     return (
-      <span className={`avatar avatar-empty ${sizeClass}`} title={title === null ? undefined : (title ?? 'Unassigned')}>
+      <span className={`avatar avatar-empty ${sizeClass}`} title={title === null ? undefined : (title ?? t('Unassigned'))}>
         <UserRound size={iconSize} aria-hidden />
-        <span className="sr-only">Unassigned</span>
+        <span className="sr-only">{t('Unassigned')}</span>
       </span>
     );
   }
@@ -41,7 +42,7 @@ export function Person({ user, size = 'sm', muted }: { user: AvatarProps['user']
   return (
     <span className="person">
       <Avatar user={user} size={size} title={null} />
-      <span className={`truncate ${muted ? 'secondary' : ''}`}>{user ? user.name : 'Unassigned'}</span>
+      <span className={`truncate ${muted ? 'secondary' : ''}`}>{user ? user.name : t('Unassigned')}</span>
     </span>
   );
 }

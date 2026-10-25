@@ -7,10 +7,11 @@ import { useCurrentUser, useDocumentTitle } from '../auth/session';
 import { EmptyState, ErrorNotice, PageLoading, useConfirm, useToast } from '../components/Feedback';
 import { ProjectDot } from '../components/Icons';
 import { formatDate, formatDateTime, localDateOf, timeAgo } from '../lib/format';
+import { t } from '../i18n';
 
 /** Deleted tasks and projects, kept for 30 days so they can be brought back. */
 export function TrashPage() {
-  useDocumentTitle('Trash');
+  useDocumentTitle(t('Trash'));
   const me = useCurrentUser();
   const trash = useTrash();
   const restore = useRestore();
@@ -23,18 +24,18 @@ export function TrashPage() {
 
   const bringBack = (item: TrashItem) =>
     restore.mutate(item, {
-      onSuccess: () => toast.success(`“${item.title}” is back`),
+      onSuccess: () => toast.success(t('“{title}” is back', { title: item.title })),
       onError: (e) => toast.error(errorMessage(e)),
     });
 
   const deleteForGood = async (item: TrashItem) => {
     const ok = await confirm({
-      title: `Delete “${item.title}” for good?`,
+      title: t('Delete “{title}” for good?', { title: item.title }),
       message:
         item.kind === 'project'
-          ? 'The project, all its tasks, comments and files are removed permanently. This cannot be undone.'
-          : 'The task, its comments and files are removed permanently. This cannot be undone.',
-      confirmLabel: 'Delete for good',
+          ? t('The project, all its tasks, comments and files are removed permanently. This cannot be undone.')
+          : t('The task, its comments and files are removed permanently. This cannot be undone.'),
+      confirmLabel: t('Delete for good'),
       danger: true,
     });
     if (ok) destroy.mutate(item, { onError: (e) => toast.error(errorMessage(e)) });
@@ -42,25 +43,25 @@ export function TrashPage() {
 
   const emptyAll = async () => {
     const ok = await confirm({
-      title: 'Empty the trash?',
-      message: 'Everything in the trash is removed permanently, for the whole team. This cannot be undone.',
-      confirmLabel: 'Empty trash',
+      title: t('Empty the trash?'),
+      message: t('Everything in the trash is removed permanently, for the whole team. This cannot be undone.'),
+      confirmLabel: t('Empty trash'),
       danger: true,
     });
-    if (ok) empty.mutate(undefined, { onSuccess: () => toast.success('Trash emptied'), onError: (e) => toast.error(errorMessage(e)) });
+    if (ok) empty.mutate(undefined, { onSuccess: () => toast.success(t('Trash emptied')), onError: (e) => toast.error(errorMessage(e)) });
   };
 
   return (
     <div className="page" style={{ maxWidth: 980 }}>
       <header className="page-header">
         <div className="titles">
-          <h1>Trash</h1>
-          <p className="subtitle">Deleted tasks and projects stay here for {TRASH_DAYS} days. After that they’re removed for good.</p>
+          <h1>{t('Trash')}</h1>
+          <p className="subtitle">{t('Deleted tasks and projects stay here for {days} days. After that they’re removed for good.', { days: TRASH_DAYS })}</p>
         </div>
         {isAdmin && (trash.data?.length ?? 0) > 0 && (
           <div className="actions">
             <button type="button" className="btn" onClick={() => void emptyAll()}>
-              <Trash2 size={16} /> Empty trash
+              <Trash2 size={16} /> {t('Empty trash')}
             </button>
           </div>
         )}
@@ -72,8 +73,8 @@ export function TrashPage() {
         <ErrorNotice error={trash.error} onRetry={() => void trash.refetch()} />
       ) : trash.data.length === 0 ? (
         <div className="card">
-          <EmptyState icon={<Trash2 size={22} />} title="The trash is empty">
-            When you delete a task or a project, it comes here first, so a mistake is easy to undo.
+          <EmptyState icon={<Trash2 size={22} />} title={t('The trash is empty')}>
+            {t('When you delete a task or a project, it comes here first, so a mistake is easy to undo.')}
           </EmptyState>
         </div>
       ) : (
@@ -81,10 +82,10 @@ export function TrashPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Deleted</th>
-                <th>Removed for good</th>
-                <th aria-label="Actions" />
+                <th>{t('Item')}</th>
+                <th>{t('Deleted')}</th>
+                <th>{t('Removed for good')}</th>
+                <th aria-label={t('Actions')} />
               </tr>
             </thead>
             <tbody>
@@ -103,7 +104,7 @@ export function TrashPage() {
                           </div>
                           <div className="row secondary" style={{ gap: 6, fontSize: 'var(--text-sm)' }}>
                             {item.kind === 'project' ? (
-                              'Project, with all its tasks'
+                              t('Project, with all its tasks')
                             ) : (
                               <>
                                 {item.projectColor && <ProjectDot color={item.projectColor} />}
@@ -115,14 +116,13 @@ export function TrashPage() {
                       </div>
                     </td>
                     <td className="secondary" title={formatDateTime(item.deletedAt)}>
-                      {timeAgo(item.deletedAt)}
-                      {by ? ` by ${by}` : ''}
+                      {by ? t('{time} by {name}', { time: timeAgo(item.deletedAt), name: by }) : timeAgo(item.deletedAt)}
                     </td>
                     <td className="secondary">{formatDate(localDateOf(item.purgeAt))}</td>
                     <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
                       {item.canRestore && (
                         <button type="button" className="btn btn-sm" onClick={() => bringBack(item)} disabled={restore.isPending}>
-                          <RotateCcw size={14} /> Restore
+                          <RotateCcw size={14} /> {t('Restore')}
                         </button>
                       )}
                       {isAdmin && (
@@ -131,8 +131,8 @@ export function TrashPage() {
                           className="icon-btn icon-btn-sm"
                           style={{ marginLeft: 6 }}
                           onClick={() => void deleteForGood(item)}
-                          aria-label={`Delete ${item.title} for good`}
-                          title="Delete for good"
+                          aria-label={t('Delete {title} for good', { title: item.title })}
+                          title={t('Delete for good')}
                         >
                           <Trash2 size={14} />
                         </button>

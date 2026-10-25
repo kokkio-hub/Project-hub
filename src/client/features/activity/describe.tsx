@@ -1,121 +1,100 @@
 import type { ReactNode } from 'react';
 import { TASK_STATUS_LABELS, PROJECT_STATUS_LABELS, type ActivityItem, type ProjectStatus, type TaskStatus, type User } from '../../../shared/types';
+import { N_, t, tx } from '../../i18n';
 
 const FIELD_LABELS: Record<string, string> = {
-  title: 'title',
-  description: 'description',
-  priority: 'priority',
-  startDate: 'start date',
-  dueDate: 'due date',
-  projectId: 'project',
-  name: 'name',
-  color: 'colour',
-  status: 'status',
-  ownerId: 'owner',
-  visibility: 'visibility',
-  labelIds: 'labels',
-  recurrence: 'repeat',
+  title: N_('title'),
+  description: N_('description'),
+  priority: N_('priority'),
+  startDate: N_('start date'),
+  dueDate: N_('due date'),
+  projectId: N_('project'),
+  name: N_('name'),
+  color: N_('colour'),
+  status: N_('status'),
+  ownerId: N_('owner'),
+  visibility: N_('visibility'),
+  labelIds: N_('labels'),
+  recurrence: N_('repeat'),
+  parentId: N_('parent task'),
+  milestoneId: N_('milestone'),
+  fields: N_('fields'),
 };
 
-function joinWords(words: string[]): string {
+/** "a, b and c" in the interface language. */
+export function joinWords(words: string[]): string {
   if (words.length <= 1) return words.join('');
-  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+  return t('{list} and {last}', { list: words.slice(0, -1).join(', '), last: words[words.length - 1] });
+}
+
+function fieldNames(fields: string[] | undefined): string {
+  return joinWords((fields ?? []).map((f) => (FIELD_LABELS[f] ? t(FIELD_LABELS[f]) : f)));
 }
 
 /**
  * One human sentence per activity entry, e.g. "Liam moved Homepage wireframes to Done".
- * In `task` context the task itself is implied ("moved this to Done").
+ * In `task` context the task itself is implied ("moved this task to Done").
  */
 export function describeActivity(
   item: ActivityItem,
   usersById: Map<number, User>,
   context: 'global' | 'task' = 'global',
 ): ReactNode {
-  const actor = item.userId ? (usersById.get(item.userId)?.name ?? 'Someone') : 'Someone';
+  const actor = item.userId ? (usersById.get(item.userId)?.name ?? t('Someone')) : t('Someone');
   const who = <strong>{actor}</strong>;
-  const task = context === 'task' ? 'this task' : <strong>{item.data.taskTitle ?? 'a task'}</strong>;
-  const project = <strong>{item.data.projectName ?? 'a project'}</strong>;
+  const task = context === 'task' ? t('this task') : <strong>{item.data.taskTitle ?? t('a task')}</strong>;
+  const project = <strong>{item.data.projectName ?? t('a project')}</strong>;
 
   switch (item.type) {
     case 'project.created':
-      return <>{who} created the project {project}</>;
+      return tx('{who} created the project {project}', { who, project });
     case 'project.deleted':
-      return <>{who} deleted the project {project}</>;
+      return tx('{who} deleted the project {project}', { who, project });
     case 'project.restored':
-      return <>{who} restored the project {project}</>;
+      return tx('{who} restored the project {project}', { who, project });
     case 'project.updated': {
       const to = item.data.to as ProjectStatus | undefined;
       if (to && PROJECT_STATUS_LABELS[to]) {
-        return (
-          <>
-            {who} set {project} to {PROJECT_STATUS_LABELS[to].toLowerCase()}
-          </>
-        );
+        return tx('{who} set {project} to {status}', { who, project, status: t(PROJECT_STATUS_LABELS[to]).toLowerCase() });
       }
-      const fields = (item.data.fields ?? []).map((f) => FIELD_LABELS[f] ?? f);
-      return (
-        <>
-          {who} updated the {fields.length ? joinWords(fields) : 'settings'} of {project}
-        </>
-      );
+      const fields = fieldNames(item.data.fields);
+      return fields
+        ? tx('{who} updated the {fields} of {project}', { who, fields, project })
+        : tx('{who} updated the settings of {project}', { who, project });
     }
     case 'task.created':
-      return <>{who} created {task}</>;
+      return tx('{who} created {task}', { who, task });
     case 'task.deleted':
-      return <>{who} deleted {task}</>;
+      return tx('{who} deleted {task}', { who, task });
     case 'task.restored':
-      return <>{who} restored {task}</>;
+      return tx('{who} restored {task}', { who, task });
     case 'task.attachment':
-      return (
-        <>
-          {who} attached <strong>{item.data.filename ?? 'a file'}</strong> to {task}
-        </>
-      );
+      return tx('{who} attached {file} to {task}', { who, file: <strong>{item.data.filename ?? t('a file')}</strong>, task });
     case 'task.status': {
       const to = item.data.to as TaskStatus | undefined;
-      if (to === 'done') return <>{who} completed {task}</>;
-      if (item.data.from === to) return <>{who} moved {task} to another column</>;
-      if (item.data.from === 'done') {
-        return (
-          <>
-            {who} reopened {task}
-          </>
-        );
-      }
-      return (
-        <>
-          {who} moved {task} to {to ? TASK_STATUS_LABELS[to] : 'another column'}
-        </>
-      );
+      if (to === 'done') return tx('{who} completed {task}', { who, task });
+      if (item.data.from === to) return tx('{who} moved {task} to another column', { who, task });
+      if (item.data.from === 'done') return tx('{who} reopened {task}', { who, task });
+      return to
+        ? tx('{who} moved {task} to {status}', { who, task, status: t(TASK_STATUS_LABELS[to]) })
+        : tx('{who} moved {task} to another column', { who, task });
     }
     case 'task.assigned': {
       const assigneeId = item.data.assigneeId ?? null;
-      if (assigneeId === null) return <>{who} unassigned {task}</>;
-      if (assigneeId === item.userId) return <>{who} took {task}</>;
-      const assignee = usersById.get(assigneeId)?.name ?? 'someone';
-      return (
-        <>
-          {who} assigned {task} to <strong>{assignee}</strong>
-        </>
-      );
+      if (assigneeId === null) return tx('{who} unassigned {task}', { who, task });
+      if (assigneeId === item.userId) return tx('{who} took {task}', { who, task });
+      const assignee = <strong>{usersById.get(assigneeId)?.name ?? t('someone')}</strong>;
+      return tx('{who} assigned {task} to {assignee}', { who, task, assignee });
     }
     case 'task.updated': {
-      const fields = (item.data.fields ?? []).map((f) => FIELD_LABELS[f] ?? f);
-      return (
-        <>
-          {who} changed the {fields.length ? joinWords(fields) : 'details'} of {task}
-        </>
-      );
+      const fields = fieldNames(item.data.fields);
+      return fields
+        ? tx('{who} changed the {fields} of {task}', { who, fields, task })
+        : tx('{who} changed the details of {task}', { who, task });
     }
     case 'comment.created':
-      return context === 'task' ? (
-        <>{who} commented</>
-      ) : (
-        <>
-          {who} commented on {task}
-        </>
-      );
+      return context === 'task' ? tx('{who} commented', { who }) : tx('{who} commented on {task}', { who, task });
     default:
-      return <>{who} made a change</>;
+      return tx('{who} made a change', { who });
   }
 }

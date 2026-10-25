@@ -4,6 +4,7 @@ import { deleteToken, issueToken, markTokenEmailed } from '../auth/tokens.js';
 import { inviteEmail, resetEmail } from '../lib/emails.js';
 import type { UserRow } from '../repos/users.js';
 import { RESET_LINK_MINUTES } from '../../shared/types.js';
+import { trFor, userLanguage, type Lang } from '../i18n/index.js';
 
 /**
  * Invitation and password reset links: creating them, and emailing them.
@@ -33,7 +34,14 @@ export function publicBaseUrl(ctx: AppContext, req: Request): string {
 /** Creates a new invitation link for someone who hasn't joined yet, and emails it if asked. Older links stop working. */
 export async function issueInvitation(
   ctx: AppContext,
-  input: { user: UserRow; invitedBy: Sender | null; baseUrl: string; sendEmail: boolean },
+  input: {
+    user: UserRow;
+    invitedBy: Sender | null;
+    baseUrl: string;
+    sendEmail: boolean;
+    /** Language of the email: the person's own if known, else this one (the inviting admin's). */
+    lang: Lang;
+  },
 ): Promise<LinkResult> {
   const { db, config, mailer } = ctx;
   const { user } = input;
@@ -50,14 +58,17 @@ export async function issueInvitation(
   try {
     await mailer.send({
       to: user.email,
-      ...inviteEmail({
-        appName: config.appName,
-        url,
-        inviteeName: user.name,
-        email: user.email,
-        inviterName: input.invitedBy?.name ?? null,
-        days: config.inviteTtlDays,
-      }),
+      ...inviteEmail(
+        {
+          appName: config.appName,
+          url,
+          inviteeName: user.name,
+          email: user.email,
+          inviterName: input.invitedBy?.name ?? null,
+          days: config.inviteTtlDays,
+        },
+        trFor(userLanguage(user, input.lang)),
+      ),
     });
     markTokenEmailed(db, token);
     return { url, expiresAt, emailed: true };
@@ -71,7 +82,13 @@ export async function issueInvitation(
 /** Emails a link to choose a new password. The current password keeps working until the link is used. */
 export async function sendPasswordResetLink(
   ctx: AppContext,
-  input: { user: UserRow; requestedBy: Sender | null; baseUrl: string },
+  input: {
+    user: UserRow;
+    requestedBy: Sender | null;
+    baseUrl: string;
+    /** Language of the email when the person has none of their own yet. */
+    lang: Lang;
+  },
 ): Promise<void> {
   const { db, config, mailer } = ctx;
   const { user } = input;
@@ -85,7 +102,10 @@ export async function sendPasswordResetLink(
   try {
     await mailer.send({
       to: user.email,
-      ...resetEmail({ appName: config.appName, url, name: user.name, email: user.email, requestedBy: input.requestedBy?.name ?? null }),
+      ...resetEmail(
+        { appName: config.appName, url, name: user.name, email: user.email, requestedBy: input.requestedBy?.name ?? null },
+        trFor(userLanguage(user, input.lang)),
+      ),
     });
     markTokenEmailed(db, token);
   } catch (error) {

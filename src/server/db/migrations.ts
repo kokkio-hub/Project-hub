@@ -296,4 +296,62 @@ export const migrations: (string | Migration)[] = [
   );
   `,
   },
+  /* 4: interface language, subtasks, milestones, custom fields, saved views */ `
+  -- language: the person's choice (NULL = automatic); ui_language: what they last used the app in.
+  ALTER TABLE users ADD COLUMN language TEXT;
+  ALTER TABLE users ADD COLUMN ui_language TEXT;
+
+  -- Subtasks are tasks with a parent in the same project (one level deep).
+  ALTER TABLE tasks ADD COLUMN parent_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE;
+  CREATE INDEX tasks_parent_idx ON tasks (parent_id) WHERE parent_id IS NOT NULL;
+
+  CREATE TABLE milestones (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name        TEXT    NOT NULL,
+    date        TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    reached_at  TEXT,                              -- set when someone marks it reached
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
+  );
+  CREATE INDEX milestones_project_idx ON milestones (project_id, date);
+  ALTER TABLE tasks ADD COLUMN milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL;
+  CREATE INDEX tasks_milestone_idx ON tasks (milestone_id) WHERE milestone_id IS NOT NULL;
+
+  CREATE TABLE custom_fields (
+    id           INTEGER PRIMARY KEY,
+    project_id   INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name         TEXT    NOT NULL,
+    type         TEXT    NOT NULL CHECK (type IN ('text', 'number', 'select', 'date', 'checkbox')),
+    options      TEXT    NOT NULL DEFAULT '[]',     -- dropdown choices: [{"id", "name", "color"}]
+    show_on_card INTEGER NOT NULL DEFAULT 0 CHECK (show_on_card IN (0, 1)),
+    position     INTEGER NOT NULL,
+    created_at   TEXT    NOT NULL
+  );
+  CREATE INDEX custom_fields_project_idx ON custom_fields (project_id, position);
+
+  CREATE TABLE task_field_values (
+    task_id  INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    field_id INTEGER NOT NULL REFERENCES custom_fields(id) ON DELETE CASCADE,
+    value    TEXT    NOT NULL,
+    PRIMARY KEY (task_id, field_id)
+  ) WITHOUT ROWID;
+  CREATE INDEX task_field_values_field_idx ON task_field_values (field_id);
+
+  -- A person's saved filter and display settings for a project.
+  CREATE TABLE saved_views (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT    NOT NULL,
+    view       TEXT    NOT NULL CHECK (view IN ('board', 'list', 'timeline', 'calendar')),
+    settings   TEXT    NOT NULL DEFAULT '{}',
+    position   INTEGER NOT NULL,
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
+  );
+  CREATE INDEX saved_views_user_idx ON saved_views (user_id, position);
+  `,
 ];

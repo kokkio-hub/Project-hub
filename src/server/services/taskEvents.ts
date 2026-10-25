@@ -7,7 +7,9 @@ import { columnForStage } from '../repos/columns.js';
 import { newlyUnblocked } from '../repos/dependencies.js';
 import { setTaskLabels } from '../repos/labels.js';
 import type { ProjectRow } from '../repos/projects.js';
-import { getTaskRow, insertTask, recurrenceOf, toTask, type TaskRow } from '../repos/tasks.js';
+import { getTaskRow, insertTask, listSubtaskRows, recurrenceOf, toTask, type TaskRow } from '../repos/tasks.js';
+import { copyFieldValues } from '../repos/fields.js';
+import { addDays, diffDays } from '../../shared/dates.js';
 import { getUserById } from '../repos/users.js';
 import { notify } from './notify.js';
 
@@ -54,12 +56,41 @@ export function spawnNextOccurrence(ctx: AppContext, task: TaskRow, project: Pro
       dueDate: dates.dueDate,
       createdBy: task.created_by ?? actorId,
       recurrence: rule,
+      // A repeating subtask's next copy stays under the same task.
+      parentId: task.parent_id,
     },
     columnForStage(db, task.project_id, 'todo'),
   );
   const labelIds = toTask(fresh).labelIds;
   if (labelIds.length > 0) setTaskLabels(db, created.id, labelIds);
   for (const item of listChecklist(db, task.id)) insertChecklistItem(db, created.id, item.body, actorId);
+  copyFieldValues(db, task.id, created.id);
+  // Its subtasks come along, open again, with their dates moved by as much as the task's.
+  const anchorBefore = task.due_date ?? task.start_date;
+  const anchorAfter = dates.dueDate ?? dates.startDate;
+  const offset = anchorBefore && anchorAfter ? diffDays(anchorAfter, anchorBefore) : 0;
+  const shift = (date: string | null) => (date && offset ? addDays(date, offset) : date);
+  for (const child of listSubtaskRows(db, task.id)) {
+    const childAssignee = child.assignee_id ? getUserById(db, child.assignee_id) : undefined;
+    const copy = insertTask(
+      db,
+      {
+        projectId: task.project_id,
+        title: child.title,
+        description: child.description,
+        priority: child.priority,
+        assigneeId: childAssignee && childAssignee.is_active && childAssignee.role !== 'guest' ? childAssignee.id : null,
+        startDate: shift(child.start_date),
+        dueDate: shift(child.due_date),
+        createdBy: child.created_by ?? actorId,
+        parentId: created.id,
+      },
+      columnForStage(db, task.project_id, 'todo'),
+    );
+    const childLabels = toTask(child).labelIds;
+    if (childLabels.length > 0) setTaskLabels(db, copy.id, childLabels);
+    copyFieldValues(db, child.id, copy.id);
+  }
   db.prepare('UPDATE tasks SET next_task_id = ? WHERE id = ?').run(created.id, task.id);
   logActivity(db, {
     type: 'task.created',

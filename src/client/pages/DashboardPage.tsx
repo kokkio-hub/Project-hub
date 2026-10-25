@@ -11,11 +11,12 @@ import { HealthBadge, healthTone, ProjectDot, StatusGlyph, StatusIcon } from '..
 import { describeActivity } from '../features/activity/describe';
 import { ThroughputChart, ThroughputTable, WorkloadChart, WorkloadLegend, WorkloadTable } from '../features/dashboard/Charts';
 import { ProjectFormModal } from '../features/projects/ProjectFormModal';
-import { firstName, formatDate, formatDateLong, formatDateTime, greeting, percent, timeAgo } from '../lib/format';
+import { firstName, formatDate, formatDateLong, formatDateTime, formatNumber, greeting, percent, timeAgo } from '../lib/format';
 import { useNow, useOpenTask } from '../lib/hooks';
+import { t, tn } from '../i18n';
 
 export function DashboardPage() {
-  useDocumentTitle('Dashboard');
+  useDocumentTitle(t('Dashboard'));
   const me = useCurrentUser();
   const dashboard = useDashboard();
   const { byId } = useUsers();
@@ -60,7 +61,7 @@ function StatTile({ label, value, sub, glyph }: { label: string; value: number; 
     <div className="card stat">
       <span className="stat-label">{label}</span>
       <span className="stat-value">
-        {value.toLocaleString()}
+        {formatNumber(value)}
         {glyph}
       </span>
       <span className="stat-sub">{sub}</span>
@@ -73,18 +74,18 @@ function Kpis({ data }: { data: DashboardData }) {
   return (
     <div className="kpis">
       <StatTile
-        label="Open tasks"
+        label={t('Open tasks')}
         value={s.openTasks}
-        sub={`in ${s.activeProjects} active ${s.activeProjects === 1 ? 'project' : 'projects'}`}
+        sub={tn('in {count} active project', 'in {count} active projects', s.activeProjects)}
       />
-      <StatTile label="Due this week" value={s.dueThisWeek} sub="still open, due by Sunday" />
+      <StatTile label={t('Due this week')} value={s.dueThisWeek} sub={t('still open, due by Sunday')} />
       <StatTile
-        label="Overdue"
+        label={t('Overdue')}
         value={s.overdue}
         glyph={s.overdue > 0 ? <StatusGlyph tone="critical" size={18} /> : undefined}
-        sub={s.overdue > 0 ? 'need attention' : 'nothing late'}
+        sub={s.overdue > 0 ? t('need attention') : t('nothing late')}
       />
-      <StatTile label="Completed this week" value={s.completedThisWeek} sub={`${s.completedLastWeek} last week`} />
+      <StatTile label={t('Completed this week')} value={s.completedThisWeek} sub={t('{count} last week', { count: s.completedLastWeek })} />
     </div>
   );
 }
@@ -119,12 +120,12 @@ function Panel({
 
 function ViewToggle({ table, onChange }: { table: boolean; onChange: (table: boolean) => void }) {
   return (
-    <div className="segmented" role="group" aria-label="Display as">
+    <div className="segmented" role="group" aria-label={t('Display as')}>
       <button type="button" aria-pressed={!table} onClick={() => onChange(false)}>
-        Chart
+        {t('Chart')}
       </button>
       <button type="button" aria-pressed={table} onClick={() => onChange(true)}>
-        Table
+        {t('Table')}
       </button>
     </div>
   );
@@ -137,27 +138,27 @@ function ProjectsPanel({ data, usersById }: { data: DashboardData; usersById: Ma
   const owners = new Map((projects ?? []).map((p) => [p.id, p.ownerId]));
   return (
     <Panel
-      title="Project progress"
-      sub="Share of tasks done. Projects that need attention come first."
+      title={t('Project progress')}
+      sub={t('Share of tasks done. Projects that need attention come first.')}
       action={
         <Link to="/projects" className="btn btn-ghost btn-sm">
-          All projects <ArrowRight size={14} />
+          {t('All projects')} <ArrowRight size={14} />
         </Link>
       }
     >
       {data.projects.length === 0 ? (
         <EmptyState
           icon={<FolderKanban size={22} />}
-          title="No active projects"
+          title={t('No active projects')}
           action={
             canChangeWork(me) && (
               <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
-                <Plus size={16} /> New project
+                <Plus size={16} /> {t('New project')}
               </button>
             )
           }
         >
-          {canChangeWork(me) ? 'Create a project to start tracking work.' : 'Projects you’re added to show up here.'}
+          {canChangeWork(me) ? t('Create a project to start tracking work.') : t('Projects you’re added to show up here.')}
         </EmptyState>
       ) : (
         <ul className="progress-list">
@@ -171,20 +172,20 @@ function ProjectsPanel({ data, usersById }: { data: DashboardData; usersById: Ma
                   <Link to={`/projects/${p.id}`} className="progress-name truncate">
                     {p.name}
                   </Link>
-                  {p.status === 'on_hold' && <span className="badge">On hold</span>}
+                  {p.status === 'on_hold' && <span className="badge">{t('On hold')}</span>}
                   <span className="spacer" />
                   <HealthBadge health={p.health} reason={p.healthReason} />
                 </div>
                 <div className="meter-row">
-                  <Meter value={p.progress} tone={healthTone(p.health)} label={`${p.name}: ${percent(p.progress)} done`} />
+                  <Meter value={p.progress} tone={healthTone(p.health)} label={t('{name}: {percent} done', { name: p.name, percent: percent(p.progress) })} />
                   <span className="meter-value">{percent(p.progress)}</span>
                 </div>
                 <div className="progress-foot">
                   <span>
-                    {p.done} of {p.total} tasks done
+                    {tn('{done} of {count} task done', '{done} of {count} tasks done', p.total, { done: p.done })}
                   </span>
-                  {p.overdue > 0 && <span>· {p.overdue} overdue</span>}
-                  {p.dueDate && <span>· due {formatDate(p.dueDate, data.today)}</span>}
+                  {p.overdue > 0 && <span>· {t('{count} overdue', { count: p.overdue })}</span>}
+                  {p.dueDate && <span>· {t('due {date}', { date: formatDate(p.dueDate, data.today) })}</span>}
                   <span className="spacer" />
                   <span className="muted" title={p.healthReason}>
                     {p.healthReason}
@@ -207,12 +208,12 @@ function WorkloadPanel({ data, usersById }: { data: DashboardData; usersById: Ma
   const anyWork = rows.some((r) => r.open > 0);
   return (
     <Panel
-      title="Team workload"
-      sub="Open tasks per person, by stage"
+      title={t('Team workload')}
+      sub={t('Open tasks per person, by stage')}
       action={anyWork && <ViewToggle table={table} onChange={setTable} />}
     >
       {!anyWork ? (
-        <p className="secondary">No open tasks are assigned to anyone right now.</p>
+        <p className="secondary">{t('No open tasks are assigned to anyone right now.')}</p>
       ) : table ? (
         <WorkloadTable rows={rows} usersById={usersById} />
       ) : (
@@ -228,7 +229,7 @@ function WorkloadPanel({ data, usersById }: { data: DashboardData; usersById: Ma
 function ThroughputPanel({ data }: { data: DashboardData }) {
   const [table, setTable] = useState(false);
   return (
-    <Panel title="Tasks completed per week" sub="Last 8 weeks" action={<ViewToggle table={table} onChange={setTable} />}>
+    <Panel title={t('Tasks completed per week')} sub={t('Last 8 weeks')} action={<ViewToggle table={table} onChange={setTable} />}>
       {table ? <ThroughputTable weeks={data.throughput} /> : <ThroughputChart weeks={data.throughput} />}
     </Panel>
   );
@@ -240,28 +241,28 @@ function MyTasksPanel({ data }: { data: DashboardData }) {
   const byId = new Map((projects ?? []).map((p) => [p.id, p]));
   return (
     <Panel
-      title="My next tasks"
+      title={t('My next tasks')}
       action={
         <Link to="/my-tasks" className="btn btn-ghost btn-sm">
-          View all <ArrowRight size={14} />
+          {t('View all')} <ArrowRight size={14} />
         </Link>
       }
     >
       {data.myTasks.length === 0 ? (
         <div className="row secondary" style={{ gap: 8 }}>
-          <CircleCheckBig size={16} aria-hidden /> Nothing assigned to you. Nice.
+          <CircleCheckBig size={16} aria-hidden /> {t('Nothing assigned to you. Nice.')}
         </div>
       ) : (
         <ul className="mini-tasks">
-          {data.myTasks.map((t) => {
-            const project = byId.get(t.projectId);
+          {data.myTasks.map((task) => {
+            const project = byId.get(task.projectId);
             return (
-              <li key={t.id}>
-                <button type="button" className="mini-task" onClick={() => openTask(t.id)}>
-                  <StatusIcon status={t.status} />
-                  <span className="mini-task-title truncate">{t.title}</span>
+              <li key={task.id}>
+                <button type="button" className="mini-task" onClick={() => openTask(task.id)}>
+                  <StatusIcon status={task.status} />
+                  <span className="mini-task-title truncate">{task.title}</span>
                   {project && <ProjectDot color={project.color} />}
-                  <DueChip dueDate={t.dueDate} status={t.status} today={data.today} />
+                  <DueChip dueDate={task.dueDate} status={task.status} today={data.today} />
                 </button>
               </li>
             );
@@ -276,9 +277,9 @@ function ActivityPanel({ data, usersById }: { data: DashboardData; usersById: Ma
   const openTask = useOpenTask();
   useNow(60_000);
   return (
-    <Panel title="Recent activity">
+    <Panel title={t('Recent activity')}>
       {data.activity.length === 0 ? (
-        <p className="secondary">Changes by your team will show up here.</p>
+        <p className="secondary">{t('Changes by your team will show up here.')}</p>
       ) : (
         <ul className="activity">
           {data.activity.slice(0, 8).map((item) => {

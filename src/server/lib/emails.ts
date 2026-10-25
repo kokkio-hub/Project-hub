@@ -1,4 +1,5 @@
 import { RESET_LINK_MINUTES } from '../../shared/types.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 
 /**
  * The emails the app sends. Every value that comes from people (names, the app
@@ -33,6 +34,7 @@ function firstName(name: string): string {
 }
 
 interface Layout {
+  tr: Translator;
   appName: string;
   /** Preview text shown next to the subject in most inboxes. */
   preheader: string;
@@ -46,6 +48,7 @@ interface Layout {
 
 function render(layout: Layout): { html: string; text: string } {
   const e = escapeHtml;
+  const { tr } = layout;
   const appName = oneLine(layout.appName);
   const paragraphs = layout.paragraphs
     .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#33322f;">${e(p)}</p>`)
@@ -83,12 +86,12 @@ function render(layout: Layout): { html: string; text: string } {
     : '';
 
   const fallback = layout.button
-    ? `<p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#6f6e69;">If the button doesn't work, copy this address into your browser:<br>
+    ? `<p style="margin:16px 0 0;font-size:12px;line-height:1.5;color:#6f6e69;">${e(tr.t('If the button doesn’t work, copy this address into your browser:'))}<br>
          <a href="${e(layout.button.url)}" style="color:${ACCENT};word-break:break-all;">${e(layout.button.url)}</a></p>`
     : '';
 
   const html = `<!doctype html>
-<html lang="en">
+<html lang="${tr.lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -120,7 +123,7 @@ function render(layout: Layout): { html: string; text: string } {
         </div>
       </td></tr>
     </table>
-    <p style="margin:16px 0 0;font-family:${FONT};font-size:12px;color:#898781;">Sent by ${e(appName)}</p>
+    <p style="margin:16px 0 0;font-family:${FONT};font-size:12px;color:#898781;">${e(tr.t('Sent by {app}', { app: appName }))}</p>
   </td></tr>
 </table>
 </body>
@@ -147,77 +150,91 @@ function render(layout: Layout): { html: string; text: string } {
   return { html, text };
 }
 
-export function inviteEmail(input: {
-  appName: string;
-  url: string;
-  inviteeName: string;
-  email: string;
-  inviterName: string | null;
-  days: number;
-}): EmailContent {
-  const { appName, url, email, days } = input;
+export function inviteEmail(
+  input: {
+    appName: string;
+    url: string;
+    inviteeName: string;
+    email: string;
+    inviterName: string | null;
+    days: number;
+  },
+  tr: Translator = english,
+): EmailContent {
+  const { appName: app, url, email, days } = input;
   const inviter = input.inviterName ? oneLine(input.inviterName) : null;
-  const subject = oneLine(inviter ? `${inviter} invited you to ${appName}` : `You're invited to ${appName}`);
+  const subject = oneLine(inviter ? tr.t('{name} invited you to {app}', { name: inviter, app }) : tr.t('You’re invited to {app}', { app }));
   return {
     subject,
     ...render({
-      appName,
-      preheader: `Choose a password to join ${appName}.`,
-      heading: `Join ${appName}`,
+      tr,
+      appName: app,
+      preheader: tr.t('Choose a password to join {app}.', { app }),
+      heading: tr.t('Join {app}', { app }),
       paragraphs: [
-        `Hi ${firstName(input.inviteeName)},`,
-        `${inviter ?? 'Your team'} invited you to ${appName}, where the team plans and tracks its projects. Choose a password to join. You'll sign in with ${email}.`,
+        tr.t('Hi {name},', { name: firstName(input.inviteeName) }),
+        tr.t('{inviter} invited you to {app}, where the team plans and tracks its projects. Choose a password to join. You’ll sign in with {email}.', {
+          inviter: inviter ?? tr.t('Your team'),
+          app,
+          email,
+        }),
       ],
-      button: { label: 'Accept invitation', url },
-      notes: [`This link works for ${days} ${days === 1 ? 'day' : 'days'} and can be used once.`, "Weren't expecting this? You can ignore this email."],
+      button: { label: tr.t('Accept invitation'), url },
+      notes: [
+        tr.tn('This link works for {count} day and can be used once.', 'This link works for {count} days and can be used once.', days),
+        tr.t('Weren’t expecting this? You can ignore this email.'),
+      ],
     }),
   };
 }
 
-export function resetEmail(input: {
-  appName: string;
-  url: string;
-  name: string;
-  email: string;
-  /** Name of the admin who sent the link; null when the person asked for it themselves. */
-  requestedBy: string | null;
-}): EmailContent {
-  const { appName, url, email } = input;
+export function resetEmail(
+  input: {
+    appName: string;
+    url: string;
+    name: string;
+    email: string;
+    /** Name of the admin who sent the link; null when the person asked for it themselves. */
+    requestedBy: string | null;
+  },
+  tr: Translator = english,
+): EmailContent {
+  const { appName: app, url, email } = input;
   const admin = input.requestedBy ? oneLine(input.requestedBy) : null;
   return {
-    subject: oneLine(`Reset your ${appName} password`),
+    subject: oneLine(tr.t('Reset your {app} password', { app })),
     ...render({
-      appName,
-      preheader: `Choose a new password for ${appName}.`,
-      heading: 'Choose a new password',
+      tr,
+      appName: app,
+      preheader: tr.t('Choose a new password for {app}.', { app }),
+      heading: tr.t('Choose a new password'),
       paragraphs: [
-        `Hi ${firstName(input.name)},`,
+        tr.t('Hi {name},', { name: firstName(input.name) }),
         admin
-          ? `${admin} sent you a link to choose a new password for ${appName}. You sign in with ${email}.`
-          : `We received a request to reset the password for ${email} on ${appName}.`,
+          ? tr.t('{admin} sent you a link to choose a new password for {app}. You sign in with {email}.', { admin, app, email })
+          : tr.t('We received a request to reset the password for {email} on {app}.', { email, app }),
       ],
-      button: { label: 'Choose a new password', url },
+      button: { label: tr.t('Choose a new password'), url },
       notes: [
-        `This link works for ${RESET_LINK_MINUTES} minutes and can be used once.`,
+        tr.t('This link works for {count} minutes and can be used once.', { count: RESET_LINK_MINUTES }),
         admin
-          ? 'Your current password keeps working until you choose a new one.'
-          : "Didn't ask for this? You can ignore this email. Your password won't change.",
+          ? tr.t('Your current password keeps working until you choose a new one.')
+          : tr.t('Didn’t ask for this? You can ignore this email. Your password won’t change.'),
       ],
     }),
   };
 }
 
-export function testEmail(appName: string): EmailContent {
+export function testEmail(app: string, tr: Translator = english): EmailContent {
   return {
-    subject: oneLine(`Test email from ${appName}`),
+    subject: oneLine(tr.t('Test email from {app}', { app })),
     ...render({
-      appName,
-      preheader: 'Email is set up correctly.',
-      heading: 'Email is working',
-      paragraphs: [
-        `This is a test message from ${appName}. If you're reading it, invitations and password reset emails will arrive too.`,
-      ],
-      notes: ['You received this because someone ran the send-test-email command on the server.'],
+      tr,
+      appName: app,
+      preheader: tr.t('Email is set up correctly.'),
+      heading: tr.t('Email is working'),
+      paragraphs: [tr.t('This is a test message from {app}. If you’re reading it, invitations and password reset emails will arrive too.', { app })],
+      notes: [tr.t('You received this because someone ran the send-test-email command on the server.')],
     }),
   };
 }
@@ -232,37 +249,45 @@ export interface NotificationEmailItem {
  * Notifications by email: a few at a time ("instant") or once a day with the
  * day's due and overdue work ("daily").
  */
-export function notificationsEmail(input: {
-  appName: string;
-  appUrl: string;
-  name: string;
-  mode: 'instant' | 'daily';
-  notifications: NotificationEmailItem[];
-  dueToday?: NotificationEmailItem[];
-  overdue?: NotificationEmailItem[];
-}): EmailContent {
-  const { appName, mode } = input;
+export function notificationsEmail(
+  input: {
+    appName: string;
+    appUrl: string;
+    name: string;
+    mode: 'instant' | 'daily';
+    notifications: NotificationEmailItem[];
+    dueToday?: NotificationEmailItem[];
+    overdue?: NotificationEmailItem[];
+  },
+  tr: Translator = english,
+): EmailContent {
+  const { appName: app, mode } = input;
   const count = input.notifications.length;
   const subject =
     mode === 'daily'
-      ? `Your day in ${appName}`
+      ? tr.t('Your day in {app}', { app })
       : count === 1
         ? input.notifications[0]!.text
-        : `${count} new notifications in ${appName}`;
+        : tr.t('{count} new notifications in {app}', { count, app });
   return {
     subject: oneLine(subject.length > 140 ? `${subject.slice(0, 139)}…` : subject),
     ...render({
-      appName,
-      preheader: mode === 'daily' ? 'What needs your attention today.' : 'New activity on your tasks.',
-      heading: mode === 'daily' ? `Good morning, ${firstName(input.name)}` : 'New activity',
-      paragraphs: mode === 'daily' ? ["Here's what needs your attention today."] : [],
+      tr,
+      appName: app,
+      preheader: mode === 'daily' ? tr.t('What needs your attention today.') : tr.t('New activity on your tasks.'),
+      heading: mode === 'daily' ? tr.t('Good morning, {name}', { name: firstName(input.name) }) : tr.t('New activity'),
+      paragraphs: mode === 'daily' ? [tr.t('Here’s what needs your attention today.')] : [],
       groups: [
-        { title: 'Overdue', items: input.overdue ?? [] },
-        { title: 'Due today', items: input.dueToday ?? [] },
-        { title: mode === 'daily' ? 'Since yesterday' : undefined, items: input.notifications },
+        { title: tr.t('Overdue'), items: input.overdue ?? [] },
+        { title: tr.t('Due today'), items: input.dueToday ?? [] },
+        { title: mode === 'daily' ? tr.t('Since yesterday') : undefined, items: input.notifications },
       ],
-      button: { label: `Open ${appName}`, url: input.appUrl },
-      notes: [`You get these emails ${mode === 'daily' ? 'once a day' : 'when something happens'}. Change this in your account settings.`],
+      button: { label: tr.t('Open {app}', { app }), url: input.appUrl },
+      notes: [
+        mode === 'daily'
+          ? tr.t('You get these emails once a day. Change this in your account settings.')
+          : tr.t('You get these emails when something happens. Change this in your account settings.'),
+      ],
     }),
   };
 }

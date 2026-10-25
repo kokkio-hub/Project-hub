@@ -1,5 +1,6 @@
 import type { ColorName, ProjectHealth, TaskPriority, TaskStatus } from '../../shared/types';
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/types';
+import { N_, t } from '../i18n';
 
 /**
  * Task stage icon: a ring that fills up as work progresses (to do → done), in the
@@ -38,7 +39,7 @@ export function StatusLabel({ status }: { status: TaskStatus }) {
   return (
     <span className="status-label">
       <StatusIcon status={status} />
-      {TASK_STATUS_LABELS[status]}
+      {t(TASK_STATUS_LABELS[status])}
     </span>
   );
 }
@@ -47,7 +48,7 @@ export function StatusLabel({ status }: { status: TaskStatus }) {
 export function PriorityIcon({ priority, size = 14 }: { priority: TaskPriority; size?: number }) {
   if (priority === 'urgent') {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" aria-label="Urgent priority" role="img" style={{ flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox="0 0 14 14" aria-label={t('Urgent priority')} role="img" style={{ flexShrink: 0 }}>
         <rect x="1" y="1" width="12" height="12" rx="3" fill="var(--critical)" />
         <rect x="6.2" y="3.4" width="1.6" height="4.6" rx="0.8" fill="#fff" />
         <circle cx="7" cy="10" r="0.95" fill="#fff" />
@@ -61,7 +62,7 @@ export function PriorityIcon({ priority, size = 14 }: { priority: TaskPriority; 
       height={size}
       viewBox="0 0 14 14"
       role="img"
-      aria-label={`${TASK_PRIORITY_LABELS[priority]} priority`}
+      aria-label={t('{priority} priority', { priority: t(TASK_PRIORITY_LABELS[priority]) })}
       style={{ flexShrink: 0 }}
     >
       {[0, 1, 2].map((i) => (
@@ -83,7 +84,7 @@ export function PriorityLabel({ priority }: { priority: TaskPriority }) {
   return (
     <span className="status-label">
       <PriorityIcon priority={priority} />
-      {TASK_PRIORITY_LABELS[priority]}
+      {t(TASK_PRIORITY_LABELS[priority])}
     </span>
   );
 }
@@ -125,10 +126,10 @@ export function StatusGlyph({ tone, size = 14 }: { tone: Tone; size?: number }) 
 }
 
 const HEALTH: Record<ProjectHealth, { tone: Tone; label: string }> = {
-  on_track: { tone: 'good', label: 'On track' },
-  at_risk: { tone: 'warning', label: 'At risk' },
-  off_track: { tone: 'critical', label: 'Off track' },
-  completed: { tone: 'neutral', label: 'Completed' },
+  on_track: { tone: 'good', label: N_('On track') },
+  at_risk: { tone: 'warning', label: N_('At risk') },
+  off_track: { tone: 'critical', label: N_('Off track') },
+  completed: { tone: 'neutral', label: N_('Completed') },
 };
 
 export function HealthBadge({ health, reason }: { health: ProjectHealth; reason?: string }) {
@@ -136,7 +137,7 @@ export function HealthBadge({ health, reason }: { health: ProjectHealth; reason?
   return (
     <span className="status-label health" title={reason}>
       <StatusGlyph tone={tone} />
-      <span>{label}</span>
+      <span>{t(label)}</span>
     </span>
   );
 }

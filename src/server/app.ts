@@ -10,10 +10,11 @@ import { errorHandler } from './lib/errors.js';
 import { EventHub } from './lib/events.js';
 import { BackgroundJobs } from './lib/jobs.js';
 import { createMailer, type Mailer } from './lib/mailer.js';
-import { authenticate, clientClock, requireCustomHeader } from './auth/middleware.js';
+import { authenticate, clientClock, clientLanguage, requireCustomHeader } from './auth/middleware.js';
 import { authRouter } from './routes/auth.js';
 import { commentsRouter, taskCommentsRouter } from './routes/comments.js';
 import { miscRouter } from './routes/misc.js';
+import { planningRouter } from './routes/planning.js';
 import { columnsRouter, labelsRouter, projectsRouter } from './routes/projects.js';
 import { attachmentsRouter, checklistRouter, taskDetailsRouter } from './routes/taskDetails.js';
 import { tasksRouter } from './routes/tasks.js';
@@ -89,6 +90,7 @@ export function createApp({
   api.use(clientClock);
   api.use(requireCustomHeader);
   api.use(authenticate(ctx));
+  api.use(clientLanguage(ctx));
   api.use((_req, res, next) => {
     res.set('Cache-Control', 'no-store');
     next();
@@ -96,6 +98,7 @@ export function createApp({
 
   api.use('/auth', authRouter(ctx));
   api.use('/users', usersRouter(ctx));
+  api.use(planningRouter(ctx));
   api.use('/projects', projectsRouter(ctx));
   api.use('/columns', columnsRouter(ctx));
   api.use('/labels', labelsRouter(ctx));

@@ -19,11 +19,17 @@ Self-hosted project management for teams. Everyone on the team signs in with the
 **Planning the work**
 
 - **Kanban boards with your own columns.** A new project starts with *To do → In progress → In review → Done*. Owners and admins can add, rename, reorder and remove columns (up to 12), such as *Client review* or *Ready to ship*. Each column counts as one of the four stages, so progress, the dashboard and *My tasks* keep working. Drag cards between columns and reorder them, add a task right from a column, and filter by person, priority, label or text.
+- **Swimlanes.** Split the board into rows by person, priority, label or one of your dropdown fields. Drag a card into another row to give it to someone else or change its priority. Rows fold away, and the board remembers how you grouped it.
 - **Labels.** Each project has its own coloured labels, such as *Design* or *Bug*. They show on cards and in the list, and you can filter by them.
+- **Subtasks.** Split a bigger task into subtasks, each with its own person, dates and status. The main task's card shows how many are done, like *2/3*, and a checklist item can be turned into a subtask with one click. When a main task goes to the trash, its subtasks go with it, and they come back together.
 - **Checklists.** Break a task into steps you tick off. The card shows how far along it is, like *2/5*.
+- **Milestones.** Mark the moments that matter, such as *Design sign-off* or *Launch*, and link tasks to them. Each milestone shows how many of its tasks are done, and warns when tasks are due after it or its date has passed. Milestones appear on the timeline and the calendar.
+- **Custom fields.** Owners and admins add their own fields to a project's tasks: text, number, dropdown, date or checkbox, such as *Client* or *Story points*. Choose which ones show on the cards. You can filter on dropdowns and checkboxes, sort the list by any field, and the fields are included in the CSV export.
 - **Dependencies.** Mark that a task waits for another one. Waiting tasks show *Blocked* until the other task is done, and the person working on it is told when it's ready to start. The timeline draws arrows between them and warns when the dates don't fit.
 - **Recurring tasks.** A task can repeat every day, week, month or year (or every few). When it's completed, the next one is created with the dates moved on.
 - **Timeline / Gantt chart.** Drag a bar to move a task, or drag either end to change its start or due date. You can zoom by days, weeks or months. There's a timeline per project and one for all projects together, showing each project's progress. Tasks that only have a due date show as a diamond. Overdue tasks are flagged.
+- **Calendar.** See due dates and milestones by month or week, per project or for all projects together. Drag a task to another day to reschedule it (a task with a start date keeps its length), drag tasks without a date onto a day to plan them, and click a day to add a task there.
+- **Saved views.** Save a combination of view, filters and grouping under a name, such as *My urgent work* or *Launch tasks by person*. Your saved views are listed in the sidebar and only you see them.
 - **Templates and copies.** Save a project as a template, then start new projects from it with all its columns, labels, tasks and checklists, with the dates moved to the new start date. You can also duplicate any project.
 - **Assignees and due dates everywhere.** *My tasks* groups the work assigned to you into overdue, today, this week and later.
 
@@ -61,6 +67,7 @@ Self-hosted project management for teams. Everyone on the team signs in with the
 
 **And also**
 
+- **English and Dutch.** Everyone picks their own language in their account settings, or the app follows the browser's language. Emails and the calendar feed use each person's language too. An admin can set the language for people who haven't chosen one with `DEFAULT_LANGUAGE`.
 - **Light and dark mode**, and it works on phones.
 - **Keyboard support.** On the board, press Space to pick up a card, use the arrow keys to move it and press Space again to drop it. On the timeline, use the arrow keys to move a bar by a day.
 - **Easy to run.** It's a single Node.js process with a single SQLite database file. You don't need to run a separate database server.
@@ -235,6 +242,7 @@ Set these as environment variables or in `.env`. All of them are optional.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `APP_NAME` | `Project Hub` | Name shown in the app and in the browser tab. |
+| `DEFAULT_LANGUAGE` | *(the browser's)* | `en` or `nl`: the interface and email language for people who haven't picked one in their account settings. Without it, the app follows each browser's language. |
 | `PORT` | `3000` | HTTP port. |
 | `HOST` | `0.0.0.0` | Network interface to listen on. |
 | `DATABASE_PATH` | `./data/project-hub.db` | SQLite file. Docker uses `/data/project-hub.db`. |
@@ -382,6 +390,7 @@ npm run build      # production build into dist/
 ```text
 src/
   shared/     types, date helpers, recurrence, mentions and project-health rules used by both sides
+    i18n/         translation core and the Dutch texts both sides share
   server/
     index.ts      entry point           app.ts        Express app (routes, security, static files)
     db/           connection + schema migrations (with a copy saved before upgrades)
@@ -390,9 +399,11 @@ src/
     routes/       HTTP endpoints
     services/     permissions, notifications, trash, project copies, backups, calendar, CSV, background jobs
     lib/          validation, errors, live-update hub, S3 client, email sending and templates
+    i18n/         Dutch texts for emails and error messages (translated on the way out)
     cli.ts        command-line tools    seed.ts       demo data
   client/
-    pages/        one file per screen    features/     board, timeline, task drawer, search, notifications, labels, account…
+    pages/        one file per screen    features/     board, timeline, calendar, task drawer, planning, search, labels, account…
+    i18n/         t()/tn() and the Dutch texts of the interface
     components/   shared UI              api/          API client, queries, live updates
     styles/       design tokens (light/dark) and styles
 tests/          API tests
@@ -400,7 +411,7 @@ tests/          API tests
 
 ### API overview
 
-Every endpoint is under `/api`. Every request that changes something must send an `X-Requested-With` header, and `Content-Type: application/json` (file uploads send the file itself as the body, with its name in `X-File-Name`).
+Every endpoint is under `/api`. Every request that changes something must send an `X-Requested-With` header, and `Content-Type: application/json` (file uploads send the file itself as the body, with its name in `X-File-Name`). Send `X-Client-Lang: nl` to get error messages in Dutch.
 
 | Area | Endpoints |
 | --- | --- |
@@ -410,8 +421,9 @@ Every endpoint is under `/api`. Every request that changes something must send a
 | People | `GET users` · `POST users` · `PATCH users/:id` · `POST users/:id/invite` · `DELETE users/:id` (revokes an invitation) · `POST users/:id/reset-password` · `POST users/:id/disable-2fa` (admin) |
 | Projects | `GET projects[?includeArchived=true&templates=include\|only]` · `POST projects` · `GET/PATCH/DELETE projects/:id` · `POST projects/:id/duplicate` · `PUT projects/:id/members` · `GET projects/:id/export.csv` |
 | Columns, labels | `POST projects/:id/columns` · `PUT projects/:id/columns/order` · `PATCH/DELETE columns/:id` · `POST projects/:id/labels` · `PATCH/DELETE labels/:id` |
-| Tasks | `GET tasks[?projectId=&assigneeId=me&status=todo,review]` · `POST tasks` · `GET/PATCH/DELETE tasks/:id` · `POST tasks/:id/move` |
-| Task details | `GET/POST tasks/:id/checklist` · `PUT tasks/:id/checklist/order` · `PATCH/DELETE checklist/:id` · `GET tasks/:id/dependencies` · `POST tasks/:id/blockers` · `DELETE tasks/:id/blockers/:blockerId` · `GET/POST tasks/:id/attachments` · `GET attachments/:id/file` · `PATCH/DELETE attachments/:id` |
+| Tasks | `GET tasks[?projectId=&assigneeId=me&status=todo,review]` · `POST tasks` · `GET/PATCH/DELETE tasks/:id` · `POST tasks/:id/move`. A task can take `parentId` (makes it a subtask), `milestoneId` and `fields` (`{ "<field id>": value }`, `null` clears one). |
+| Planning | `POST projects/:id/milestones` · `PATCH/DELETE milestones/:id` · `POST projects/:id/fields` · `PUT projects/:id/fields/order` · `PATCH/DELETE fields/:id` · `GET views` · `POST projects/:id/views` · `PUT views/order` · `PATCH/DELETE views/:id` |
+| Task details | `GET/POST tasks/:id/checklist` · `PUT tasks/:id/checklist/order` · `PATCH/DELETE checklist/:id` · `POST checklist/:id/subtask` · `GET tasks/:id/dependencies` · `POST tasks/:id/blockers` · `DELETE tasks/:id/blockers/:blockerId` · `GET/POST tasks/:id/attachments` · `GET attachments/:id/file` · `PATCH/DELETE attachments/:id` |
 | Comments | `GET/POST tasks/:id/comments` · `PATCH/DELETE comments/:id` |
 | Inbox | `GET search?q=` · `GET notifications` · `POST notifications/read` |
 | Trash | `GET trash` · `POST trash/tasks/:id/restore` · `POST trash/projects/:id/restore` · `DELETE trash/tasks/:id` · `DELETE trash/projects/:id` · `DELETE trash` (admin) |
@@ -422,6 +434,7 @@ Every endpoint is under `/api`. Every request that changes something must send a
 
 - The `.npmrc` file turns off npm install scripts, so npm doesn't try to compile the SQLite driver. None of the current dependencies need an install script. If you add a package that does (sharp or Prisma, for example), run its setup step by hand or adjust `.npmrc`.
 - To change the database schema, add a new entry to the end of `src/server/db/migrations.ts`. Never edit an entry that has already shipped.
+- Texts are written in English and wrapped in `t()` (or `tn()` for counts); the English text is the key. Add the Dutch version to the catalog next to it (`src/client/i18n/nl.ts`, `src/server/i18n/nl.ts` or `src/shared/i18n/nl.ts`). `npm test` fails when a text has no Dutch version, or when a translation drops a `{placeholder}`.
 
 ## Troubleshooting
 

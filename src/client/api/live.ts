@@ -42,7 +42,7 @@ export function useLiveUpdates(enabled: boolean): void {
           }
           break;
         case 'project':
-          queue(['projects'], ['project'], [...qk.dashboard], ['activity'], [...qk.trash]);
+          queue(['projects'], ['project'], [...qk.dashboard], ['activity'], [...qk.trash], [...qk.views]);
           if (event.action === 'deleted' || event.action === 'created') queue(['tasks'], ['task']);
           break;
         case 'comment':
@@ -56,6 +56,9 @@ export function useLiveUpdates(enabled: boolean): void {
           break;
         case 'notification':
           queue([...qk.notifications]);
+          break;
+        case 'view':
+          queue([...qk.views]);
           break;
       }
     };

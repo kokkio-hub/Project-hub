@@ -32,7 +32,9 @@ import {
   removeDependency,
   wouldCreateCycle,
 } from '../repos/dependencies.js';
-import { getTaskRow } from '../repos/tasks.js';
+import { countSubtasks, getTaskRow, insertTask } from '../repos/tasks.js';
+import { columnForStage } from '../repos/columns.js';
+import { MAX_SUBTASKS } from '../../shared/types.js';
 import { requireAuth } from '../auth/middleware.js';
 import { canManageProject, canSeeProject } from '../services/permissions.js';
 import {
@@ -235,6 +237,42 @@ export function checklistRouter(ctx: AppContext): Router {
     deleteChecklistItem(db, item.id);
     events.broadcast({ entity: 'task', action: 'updated', id: task.id, projectId: task.project_id, actorId: req.user!.id });
     res.status(204).end();
+  });
+
+  /** Turns a checklist item into a subtask (with its own person and dates), in the first open column. */
+  router.post('/:id/subtask', (req, res) => {
+    const { item, task } = load(req);
+    if (task.parent_id !== null) throw badRequest('Subtasks can’t have subtasks of their own.');
+    if (countSubtasks(db, task.id) >= MAX_SUBTASKS) throw badRequest(`A task can have at most ${MAX_SUBTASKS} subtasks.`);
+    const project = getProjectRow(db, task.project_id)!;
+    const subtask = db.transaction(() => {
+      const created = insertTask(
+        db,
+        {
+          projectId: task.project_id,
+          title: item.body.slice(0, 200),
+          description: '',
+          priority: 'medium',
+          assigneeId: null,
+          startDate: null,
+          dueDate: null,
+          createdBy: req.user!.id,
+          parentId: task.id,
+        },
+        columnForStage(db, task.project_id, item.done ? 'done' : 'todo'),
+      );
+      deleteChecklistItem(db, item.id);
+      logActivity(db, {
+        type: 'task.created',
+        userId: req.user!.id,
+        projectId: task.project_id,
+        taskId: created.id,
+        data: { taskTitle: created.title, projectName: project.name },
+      });
+      return created;
+    })();
+    events.broadcast({ entity: 'task', action: 'created', id: subtask.id, projectId: task.project_id, actorId: req.user!.id });
+    res.status(201).json({ task: subtask });
   });
 
   return router;

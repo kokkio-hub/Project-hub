@@ -36,7 +36,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(next);
   }, []);
 
-  const value = useMemo<[ThemePreference, (t: ThemePreference) => void]>(() => [theme, setTheme], [theme, setTheme]);
+  const value = useMemo<[ThemePreference, (next: ThemePreference) => void]>(() => [theme, setTheme], [theme, setTheme]);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 

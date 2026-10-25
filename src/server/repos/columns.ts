@@ -1,5 +1,6 @@
 import type { DB } from '../db/index.js';
 import { nowIso } from '../db/index.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 import type { BoardColumn, TaskStatus } from '../../shared/types.js';
 
 export interface ColumnRow {
@@ -59,8 +60,9 @@ export function insertColumn(db: DB, projectId: number, name: string, stage: Tas
   return getColumnRow(db, Number(result.lastInsertRowid))!;
 }
 
-export function insertDefaultColumns(db: DB, projectId: number): void {
-  DEFAULT_COLUMNS.forEach((c, i) => insertColumn(db, projectId, c.name, c.stage, i));
+/** The four standard columns, named in the language of the person creating the project. */
+export function insertDefaultColumns(db: DB, projectId: number, tr: Translator = english): void {
+  DEFAULT_COLUMNS.forEach((c, i) => insertColumn(db, projectId, tr.t(c.name), c.stage, i));
 }
 
 /**

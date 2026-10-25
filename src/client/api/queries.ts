@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { Lang } from '../../shared/i18n/core';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   ActivityItem,
@@ -64,6 +65,7 @@ export const qk = {
   trash: ['trash'] as const,
   sessions: ['sessions'] as const,
   adminStatus: ['admin-status'] as const,
+  views: ['views'] as const,
 };
 
 function toQueryString(params: Record<string, string | number | boolean | undefined>): string {
@@ -84,12 +86,12 @@ export function invalidateWork(qc: QueryClient): void {
 
 /** Applies a change to a task in every cached list, so the UI updates before the server answers. */
 export function patchTaskCaches(qc: QueryClient, id: number, patch: Partial<Task>): void {
-  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((task) => (task.id === id ? { ...task, ...patch } : task)));
   qc.setQueryData<Task>(qk.task(id), (old) => (old ? { ...old, ...patch } : old));
 }
 
 function removeTaskFromCaches(qc: QueryClient, id: number): void {
-  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.filter((t) => t.id !== id));
+  qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.filter((task) => task.id !== id));
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +181,7 @@ export function useChangePassword() {
 export function useUpdateProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name?: string; title?: string; color?: ColorName; notifyEmail?: NotifyEmailMode }) =>
+    mutationFn: (input: { name?: string; title?: string; color?: ColorName; notifyEmail?: NotifyEmailMode; language?: Lang | null }) =>
       api<{ user: Me }>('/auth/me', { method: 'PATCH', body: input }).then((r) => r.user),
     onSuccess: (user) => {
       qc.setQueryData(qk.me, user);
@@ -426,6 +428,11 @@ export interface TaskInput {
   dueDate?: string | null;
   labelIds?: number[];
   recurrence?: Recurrence | null;
+  /** Makes the task a subtask of another task in the same project (null: a normal task again). */
+  parentId?: number | null;
+  milestoneId?: number | null;
+  /** Custom field values by field id; null clears one. */
+  fields?: Record<string, string | number | boolean | null>;
 }
 
 export type TaskPatch = Partial<Omit<TaskInput, 'projectId'>> & { projectId?: number };
@@ -450,8 +457,22 @@ export function useUpdateTask() {
     mutationFn: ({ id, patch }: { id: number; patch: TaskPatch }) => api<TaskSaveResult>(`/tasks/${id}`, { method: 'PATCH', body: patch }),
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ['tasks'] });
-      const { labelIds, recurrence, ...simple } = patch;
-      patchTaskCaches(qc, id, { ...simple, ...(labelIds ? { labelIds } : {}), ...(recurrence !== undefined ? { recurrence } : {}) } as Partial<Task>);
+      const { labelIds, recurrence, fields, ...simple } = patch;
+      const optimistic: Partial<Task> = { ...simple, ...(labelIds ? { labelIds } : {}), ...(recurrence !== undefined ? { recurrence } : {}) } as Partial<Task>;
+      if (fields) {
+        // Merge the changed values into each cached copy of the task.
+        const merge = (old: Task) => {
+          const values = { ...old.fieldValues };
+          for (const [key, value] of Object.entries(fields)) {
+            if (value === null || value === '' || value === false) delete values[key];
+            else values[key] = String(value);
+          }
+          return values;
+        };
+        qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((task) => (task.id === id ? { ...task, fieldValues: merge(task) } : task)));
+        qc.setQueryData<Task>(qk.task(id), (old) => (old ? { ...old, fieldValues: merge(old) } : old));
+      }
+      patchTaskCaches(qc, id, optimistic);
     },
     onSuccess: (result) => patchTaskCaches(qc, result.task.id, result.task),
     onError: () => invalidateWork(qc),

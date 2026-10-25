@@ -15,18 +15,23 @@ import { columnForStage, getColumnRow, type ColumnRow } from '../repos/columns.j
 import { listLabelRows, remapTaskLabels, setTaskLabels } from '../repos/labels.js';
 import { getProjectRow, type ProjectRow } from '../repos/projects.js';
 import {
+  countSubtasks,
   getTask,
   getTaskRow,
   insertTask,
+  listSubtaskRows,
   listTasks,
   moveTask,
+  toTask,
   trashTask,
   updateTask,
   type TaskPatch,
   type TaskRow,
 } from '../repos/tasks.js';
 import { getUserById } from '../repos/users.js';
-import { RECURRENCE_FREQUENCIES, TASK_STATUSES, type Task, type TaskStatus } from '../../shared/types.js';
+import { MAX_SUBTASKS, RECURRENCE_FREQUENCIES, TASK_STATUSES, type Task, type TaskStatus } from '../../shared/types.js';
+import { dropForeignFieldValues, FieldValueError, listFieldRows, normalizeFieldValue, setFieldValues, toField } from '../repos/fields.js';
+import { getMilestoneRow } from '../repos/milestones.js';
 import { requireAuth } from '../auth/middleware.js';
 import { notify } from '../services/notify.js';
 import { canManageProject, canSeeProject } from '../services/permissions.js';
@@ -42,6 +47,8 @@ const zRecurrence = z
   })
   .nullable();
 const zLabelIds = z.array(zIdRef).max(30, 'Use at most 30 labels');
+/** Custom field values by field id; null (or an empty value) clears one. */
+const zFieldValues = z.record(z.string().regex(/^\d+$/), z.union([z.string().max(1000), z.number(), z.boolean(), z.null()]));
 
 const createSchema = z.object({
   projectId: zIdRef,
@@ -56,6 +63,10 @@ const createSchema = z.object({
   dueDate: zNullableDate.default(null),
   labelIds: zLabelIds.default([]),
   recurrence: zRecurrence.default(null),
+  /** Makes it a subtask of this task (same project). */
+  parentId: zIdRef.nullable().default(null),
+  milestoneId: zIdRef.nullable().default(null),
+  fields: zFieldValues.optional(),
 });
 
 const updateSchema = z.object({
@@ -70,6 +81,9 @@ const updateSchema = z.object({
   dueDate: zNullableDate.optional(),
   labelIds: zLabelIds.optional(),
   recurrence: zRecurrence.optional(),
+  parentId: zIdRef.nullable().optional(),
+  milestoneId: zIdRef.nullable().optional(),
+  fields: zFieldValues.optional(),
 });
 
 const moveSchema = z
@@ -102,7 +116,19 @@ const listQuerySchema = z.object({
 });
 
 /** Fields whose edits are recorded in the activity feed as a generic "updated". */
-const TRACKED_FIELDS = ['title', 'description', 'priority', 'startDate', 'dueDate', 'projectId', 'labelIds', 'recurrence'] as const;
+const TRACKED_FIELDS = [
+  'title',
+  'description',
+  'priority',
+  'startDate',
+  'dueDate',
+  'projectId',
+  'labelIds',
+  'recurrence',
+  'parentId',
+  'milestoneId',
+  'fields',
+] as const;
 
 export function tasksRouter(ctx: AppContext): Router {
   const router = Router();
@@ -148,6 +174,53 @@ export function tasksRouter(ctx: AppContext): Router {
     return column;
   };
 
+  /** A subtask belongs to a task of the same project that isn't a subtask itself. */
+  const assertParent = (parentId: number | null | undefined, projectId: number, self?: TaskRow) => {
+    if (parentId === null || parentId === undefined) return;
+    const parent = getTaskRow(db, parentId);
+    if (!parent || parent.deleted_at || parent.project_id !== projectId) {
+      throw badRequest('A subtask must belong to a task in the same project.', { parentId: 'Choose a task in this project' });
+    }
+    if (self && parent.id === self.id) throw badRequest('A task can’t be its own subtask.', { parentId: 'Choose another task' });
+    if (parent.parent_id !== null) {
+      throw badRequest('Subtasks can’t have subtasks of their own.', { parentId: 'Choose a main task' });
+    }
+    if (self && countSubtasks(db, self.id) > 0) {
+      throw badRequest('This task has subtasks, so it can’t become a subtask itself.', { parentId: 'Has subtasks' });
+    }
+    if (countSubtasks(db, parent.id) >= MAX_SUBTASKS) {
+      throw badRequest(`A task can have at most ${MAX_SUBTASKS} subtasks.`, { parentId: 'Too many subtasks' });
+    }
+  };
+
+  const assertMilestone = (milestoneId: number | null | undefined, projectId: number) => {
+    if (milestoneId === null || milestoneId === undefined) return;
+    const milestone = getMilestoneRow(db, milestoneId);
+    if (!milestone || milestone.project_id !== projectId) {
+      throw badRequest('That milestone isn’t in this project.', { milestoneId: 'Unknown milestone' });
+    }
+  };
+
+  /** Checks custom field values against the project's fields. */
+  const fieldValues = (input: Record<string, unknown> | undefined, projectId: number): Map<number, string | null> => {
+    const values = new Map<number, string | null>();
+    if (!input) return values;
+    const fields = new Map(listFieldRows(db, projectId).map((f) => [f.id, toField(f)]));
+    for (const [key, raw] of Object.entries(input)) {
+      const field = fields.get(Number(key));
+      const where = `fields.${key}`;
+      if (!field) throw badRequest('That field isn’t in this project.', { [where]: 'Unknown field' });
+      try {
+        values.set(field.id, normalizeFieldValue(field, raw));
+      } catch (error) {
+        // "Story points: Enter a number" (translated on the way out like a validation message).
+        if (error instanceof FieldValueError) throw badRequest(`${field.name}: ${error.message}`, { [where]: error.message });
+        throw error;
+      }
+    }
+    return values;
+  };
+
   const broadcast = (action: 'created' | 'updated' | 'deleted', task: { id: number; projectId: number }, actorId: number) =>
     events.broadcast({ entity: 'task', action, id: task.id, projectId: task.projectId, actorId });
 
@@ -168,11 +241,15 @@ export function tasksRouter(ctx: AppContext): Router {
     assertAssignee(input.assigneeId, project);
     assertDateOrder(input.startDate, input.dueDate);
     assertLabels(input.labelIds, project.id);
+    assertParent(input.parentId, project.id);
+    assertMilestone(input.milestoneId, project.id);
+    const values = fieldValues(input.fields, project.id);
     const column = input.columnId !== undefined ? columnIn(input.columnId, project.id) : columnForStage(db, project.id, input.status);
 
     const task = db.transaction(() => {
       const created = insertTask(db, { ...input, createdBy: req.user!.id }, column);
       if (input.labelIds.length > 0) setTaskLabels(db, created.id, input.labelIds);
+      if (values.size > 0) setFieldValues(db, created.id, values);
       logActivity(db, {
         type: 'task.created',
         userId: req.user!.id,
@@ -216,6 +293,13 @@ export function tasksRouter(ctx: AppContext): Router {
       input.dueDate === undefined ? current.due_date : input.dueDate,
     );
     if (input.labelIds !== undefined) assertLabels(input.labelIds, project.id);
+    const movesProject = project.id !== current.project_id;
+    // A milestone or parent belongs to one project: moving the task elsewhere lets go of them.
+    const parentId = input.parentId !== undefined ? input.parentId : movesProject ? null : undefined;
+    const milestoneId = input.milestoneId !== undefined ? input.milestoneId : movesProject ? null : undefined;
+    if (parentId !== undefined && parentId !== current.parent_id) assertParent(parentId, project.id, current);
+    if (milestoneId !== undefined) assertMilestone(milestoneId, project.id);
+    const values = fieldValues(input.fields, project.id);
     const column = targetColumn(current, input, project.id);
 
     const { task, spawned } = db.transaction(() => {
@@ -228,10 +312,29 @@ export function tasksRouter(ctx: AppContext): Router {
         startDate: input.startDate,
         dueDate: input.dueDate,
         recurrence: input.recurrence,
+        parentId,
+        milestoneId,
       };
       let updated = updateTask(db, current, patch, column);
       if (input.labelIds !== undefined) setTaskLabels(db, current.id, input.labelIds);
-      else if (project.id !== current.project_id) remapTaskLabels(db, current.id, project.id);
+      else if (movesProject) remapTaskLabels(db, current.id, project.id);
+      if (movesProject) {
+        dropForeignFieldValues(db, current.id, project.id);
+        // Subtasks go along to the new project.
+        for (const child of listSubtaskRows(db, current.id)) {
+          const assignee = child.assignee_id ? getUserById(db, child.assignee_id) : undefined;
+          const keepAssignee = assignee ? canSeeProject(db, assignee, project) : true;
+          updateTask(
+            db,
+            child,
+            { projectId: project.id, milestoneId: null, ...(keepAssignee ? {} : { assigneeId: null }) },
+            columnForStage(db, project.id, child.status),
+          );
+          remapTaskLabels(db, child.id, project.id);
+          dropForeignFieldValues(db, child.id, project.id);
+        }
+      }
+      if (values.size > 0) setFieldValues(db, current.id, values);
       updated = getTask(db, current.id)!;
 
       const base = { userId: req.user!.id, projectId: updated.projectId, taskId: updated.id };
@@ -252,6 +355,9 @@ export function tasksRouter(ctx: AppContext): Router {
         projectId: current.project_id,
         labelIds: null,
         recurrence: null,
+        parentId: current.parent_id,
+        milestoneId: current.milestone_id,
+        fields: null,
       };
       const fields = TRACKED_FIELDS.filter((f) => {
         if (input[f] === undefined) return false;
@@ -259,6 +365,10 @@ export function tasksRouter(ctx: AppContext): Router {
         if (f === 'recurrence') {
           const was = current.recurrence ? `${current.recurrence}/${current.recurrence_interval}` : '';
           return (input.recurrence ? `${input.recurrence.freq}/${input.recurrence.interval}` : '') !== was;
+        }
+        if (f === 'fields') {
+          const before = toTask(current).fieldValues;
+          return [...values].some(([id, value]) => (before[id] ?? null) !== value);
         }
         return input[f] !== before[f];
       });

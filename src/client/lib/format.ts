@@ -1,80 +1,72 @@
 import { diffDays, localToday } from '../../shared/dates';
+import {
+  formatDateLongIn,
+  formatDayMonth,
+  formatMonthYear,
+  monthLongName,
+  monthShortName,
+  weekdayShort,
+} from '../../shared/i18n/dates';
+import { currentLang, currentLocale, t, tn } from '../i18n';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MONTHS_LONG = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function year(date: string): number {
+  return Number(date.slice(0, 4));
+}
 
-function parts(date: string): { y: number; m: number; d: number } {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  return { y, m, d };
+function month(date: string): number {
+  return Number(date.slice(5, 7));
 }
 
 export function monthShort(date: string): string {
-  return MONTHS[parts(date).m - 1]!;
+  return monthShortName(month(date), currentLang());
 }
 
 export function monthLong(date: string): string {
-  return MONTHS_LONG[parts(date).m - 1]!;
+  return monthLongName(month(date), currentLang());
 }
 
-/** "Sep 28", or "Sep 28, 2027" when not in the current year. */
+export function monthYear(date: string): string {
+  return formatMonthYear(date, currentLang());
+}
+
+/** "Sep 28" / "28 sep", with the year when it isn't the current one. */
 export function formatDate(date: string | null | undefined, today = localToday()): string {
   if (!date) return '';
-  const { y, m, d } = parts(date);
-  const label = `${MONTHS[m - 1]} ${d}`;
-  return y === parts(today).y ? label : `${label}, ${y}`;
+  return formatDayMonth(date, currentLang(), year(today));
 }
 
 export function formatDateLong(date: string): string {
-  const { y, m, d } = parts(date);
-  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  return `${weekday}, ${MONTHS_LONG[m - 1]} ${d}, ${y}`;
+  return formatDateLongIn(date, currentLang());
 }
 
 export function formatRange(start: string | null, end: string | null): string {
   if (start && end) return start === end ? formatDate(start) : `${formatDate(start)} – ${formatDate(end)}`;
-  if (end) return `Due ${formatDate(end)}`;
-  if (start) return `Starts ${formatDate(start)}`;
-  return 'No dates';
+  if (end) return t('Due {date}', { date: formatDate(end) });
+  if (start) return t('Starts {date}', { date: formatDate(start) });
+  return t('No dates');
 }
 
 /** Friendly due-date label: "Today", "Tomorrow", "Yesterday", "Fri", or "Oct 3". */
 export function relativeDay(date: string, today = localToday()): string {
   const delta = diffDays(date, today);
-  if (delta === 0) return 'Today';
-  if (delta === 1) return 'Tomorrow';
-  if (delta === -1) return 'Yesterday';
-  if (delta > 1 && delta < 7) {
-    const { y, m, d } = parts(date);
-    return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]!.slice(0, 3);
-  }
+  if (delta === 0) return t('Today');
+  if (delta === 1) return t('Tomorrow');
+  if (delta === -1) return t('Yesterday');
+  if (delta > 1 && delta < 7) return weekdayShort(date, currentLang());
   return formatDate(date, today);
 }
 
 /** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", or a date. */
 export function timeAgo(iso: string, now = Date.now()): string {
   const seconds = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (seconds < 45) return 'just now';
+  if (seconds < 45) return t('just now');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return t('{count} min ago', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return t('{count} h ago', { count: hours });
   const days = Math.round(hours / 24);
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days} days ago`;
+  if (days === 1) return t('yesterday');
+  if (days < 7) return tn('{count} day ago', '{count} days ago', days);
   return formatDate(localDateOf(iso));
 }
 
@@ -83,10 +75,12 @@ export function localDateOf(iso: string): string {
   return localToday(new Date(iso));
 }
 
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(currentLocale(), { hour: '2-digit', minute: '2-digit' });
+}
+
 export function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return `${formatDate(localDateOf(iso))}, ${time}`;
+  return `${formatDate(localDateOf(iso))}, ${formatTime(iso)}`;
 }
 
 export function initials(name: string): string {
@@ -96,8 +90,8 @@ export function initials(name: string): string {
   return (words[0]![0]! + words[words.length - 1]![0]!).toUpperCase();
 }
 
-export function plural(n: number, singular: string, pluralForm = `${singular}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
+export function formatNumber(n: number): string {
+  return n.toLocaleString(currentLocale());
 }
 
 export function percent(value: number): string {
@@ -106,9 +100,9 @@ export function percent(value: number): string {
 
 export function greeting(date = new Date()): string {
   const hour = date.getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return t('Good morning');
+  if (hour < 18) return t('Good afternoon');
+  return t('Good evening');
 }
 
 export function firstName(name: string): string {

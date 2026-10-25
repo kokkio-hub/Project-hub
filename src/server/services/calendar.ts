@@ -1,5 +1,6 @@
 import { addDays } from '../../shared/dates.js';
 import { describeRecurrence } from '../../shared/recurrence.js';
+import { english, type Translator } from '../../shared/i18n/core.js';
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskPriority, type TaskStatus } from '../../shared/types.js';
 
 /**
@@ -20,6 +21,17 @@ export interface CalendarTask {
   projectName: string;
   columnName: string | null;
   recurrence: { freq: 'daily' | 'weekly' | 'monthly' | 'yearly'; interval: number } | null;
+}
+
+export interface CalendarMilestone {
+  id: number;
+  name: string;
+  date: string;
+  description: string;
+  reached: boolean;
+  updatedAt: string;
+  projectId: number;
+  projectName: string;
 }
 
 /** Escapes text values (RFC 5545 section 3.3.11). */
@@ -52,7 +64,10 @@ export function foldLine(line: string): string {
 const compactDate = (date: string) => date.replace(/-/g, '');
 const stamp = (iso: string) => iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 
-export function buildCalendar(input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[] }): string {
+export function buildCalendar(
+  input: { name: string; appUrl: string | null; host: string; tasks: CalendarTask[]; milestones?: CalendarMilestone[] },
+  tr: Translator = english,
+): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -70,8 +85,10 @@ export function buildCalendar(input: { name: string; appUrl: string | null; host
     const done = task.status === 'done';
     const url = input.appUrl ? `${input.appUrl}/projects/${task.projectId}?task=${task.id}` : null;
     const details = [
-      `${task.projectName} · ${task.columnName ?? TASK_STATUS_LABELS[task.status]} · ${TASK_PRIORITY_LABELS[task.priority]} priority`,
-      task.recurrence ? describeRecurrence(task.recurrence) : null,
+      `${task.projectName} · ${task.columnName ?? tr.t(TASK_STATUS_LABELS[task.status])} · ${tr.t('{priority} priority', {
+        priority: tr.t(TASK_PRIORITY_LABELS[task.priority]),
+      })}`,
+      task.recurrence ? describeRecurrence(task.recurrence, tr) : null,
       task.description.trim() ? `\n${task.description.trim().slice(0, 2000)}` : null,
       url ? `\n${url}` : null,
     ]
@@ -88,6 +105,27 @@ export function buildCalendar(input: { name: string; appUrl: string | null; host
       `SUMMARY:${icsText(`${done ? '✓ ' : ''}${task.title}`)}`,
       `DESCRIPTION:${icsText(details)}`,
       `CATEGORIES:${icsText(task.projectName)}`,
+      'TRANSP:TRANSPARENT',
+      'STATUS:CONFIRMED',
+    );
+    if (url) lines.push(`URL:${url}`);
+    lines.push('END:VEVENT');
+  }
+  for (const m of input.milestones ?? []) {
+    const url = input.appUrl ? `${input.appUrl}/projects/${m.projectId}?view=timeline` : null;
+    const details = [tr.t('Milestone in {project}', { project: m.projectName }), m.description.trim() ? `\n${m.description.trim().slice(0, 2000)}` : null, url ? `\n${url}` : null]
+      .filter(Boolean)
+      .join('\n');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:milestone-${m.id}@${input.host}`,
+      `DTSTAMP:${stamp(m.updatedAt)}`,
+      `LAST-MODIFIED:${stamp(m.updatedAt)}`,
+      `DTSTART;VALUE=DATE:${compactDate(m.date)}`,
+      `DTEND;VALUE=DATE:${compactDate(addDays(m.date, 1))}`,
+      `SUMMARY:${icsText(`${m.reached ? '✓ ' : '◆ '}${m.name}`)}`,
+      `DESCRIPTION:${icsText(details)}`,
+      `CATEGORIES:${icsText(m.projectName)}`,
       'TRANSP:TRANSPARENT',
       'STATUS:CONFIRMED',
     );

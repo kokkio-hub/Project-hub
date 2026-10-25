@@ -35,11 +35,12 @@ import {
 } from '../repos/projects.js';
 import { listTasks } from '../repos/tasks.js';
 import { getUserById, listUsers, nextColor } from '../repos/users.js';
-import { MAX_COLUMNS, PROJECT_VISIBILITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '../../shared/types.js';
+import { MAX_COLUMNS, PROJECT_VISIBILITIES } from '../../shared/types.js';
 import { requireAuth } from '../auth/middleware.js';
 import { copyProject } from '../services/copyProject.js';
-import { toCsv } from '../services/csv.js';
+import { tasksCsv } from '../services/csv.js';
 import { canChangeWork, canSeeProject } from '../services/permissions.js';
+import { trFor } from '../i18n/index.js';
 import { assertCanChange, assertManager, loadProject } from './guards.js';
 
 const zProjectName = z.string().trim().min(1, 'Give the project a name').max(120, 'Use at most 120 characters');
@@ -182,7 +183,7 @@ export function projectsRouter(ctx: AppContext): Router {
           dueDate: input.dueDate,
           ownerId,
           createdBy: req.user!.id,
-        });
+        }, { tr: trFor(req.lang) });
       }
       if (input.visibility === 'private') addMember(db, projectId, req.user!.id, req.user!.id);
       for (const memberId of input.memberIds ?? []) addMember(db, projectId, memberId, req.user!.id);
@@ -351,26 +352,7 @@ export function projectsRouter(ctx: AppContext): Router {
     const project = getProject(db, row.id, req.clientToday)!;
     const tasks = listTasks(db, req.user!, { projectId: row.id });
     const users = new Map(listUsers(db).map((u) => [u.id, u.name]));
-    const columns = new Map(project.columns.map((c) => [c.id, c.name]));
-    const labels = new Map(project.labels.map((l) => [l.id, l.name]));
-    const csv = toCsv(
-      ['ID', 'Title', 'Column', 'Stage', 'Priority', 'Assignee', 'Labels', 'Start date', 'Due date', 'Completed', 'Created', 'Checklist', 'Description'],
-      tasks.map((t) => [
-        t.id,
-        t.title,
-        (t.columnId && columns.get(t.columnId)) || TASK_STATUS_LABELS[t.status],
-        TASK_STATUS_LABELS[t.status],
-        TASK_PRIORITY_LABELS[t.priority],
-        t.assigneeId ? (users.get(t.assigneeId) ?? '') : '',
-        t.labelIds.map((id) => labels.get(id)).filter(Boolean).join(', '),
-        t.startDate,
-        t.dueDate,
-        t.completedAt?.slice(0, 10),
-        t.createdAt.slice(0, 10),
-        t.checklistTotal > 0 ? `${t.checklistDone}/${t.checklistTotal}` : '',
-        t.description,
-      ]),
-    );
+    const csv = tasksCsv({ tasks, projects: new Map([[project.id, project]]), userNames: users, includeProject: false, tr: trFor(req.lang) });
     const filename = `${row.name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim().slice(0, 60) || 'project'} tasks.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="project-tasks.csv"; filename*=UTF-8''${encodeURIComponent(filename)}`);

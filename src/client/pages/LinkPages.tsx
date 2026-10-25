@@ -16,6 +16,7 @@ import { ErrorNotice, Spinner, useToast } from '../components/Feedback';
 import { Field, PasswordInput } from '../components/Form';
 import { firstName } from '../lib/format';
 import { AuthCard, AuthIcon, SubmitButton, TwoFactorStep } from './AuthPages';
+import { t } from '../i18n';
 
 /*
  * The pages behind the links in invitation and password reset emails. The
@@ -62,8 +63,8 @@ function LinkGate({
 
   if (!token) {
     return (
-      <LinkProblem title="This link is incomplete">
-        Copy the whole link from the email into your browser's address bar, including the long code at the end.
+      <LinkProblem title={t('This link is incomplete')}>
+        {t('Copy the whole link from the email into your browser’s address bar, including the long code at the end.')}
       </LinkProblem>
     );
   }
@@ -101,7 +102,7 @@ function LinkProblem({ title, children, actions }: { title: string; children: Re
         <div className="stack" style={{ gap: 10 }}>
           {actions}
           <Link to="/" className="btn btn-lg btn-block">
-            {me.data ? `Continue to ${appName}` : 'Go to sign in'}
+            {me.data ? t('Continue to {appName}', { appName }) : t('Go to sign in')}
           </Link>
         </div>
       </div>
@@ -147,14 +148,13 @@ function useNewPassword() {
 // ---------------------------------------------------------------------------
 
 export function AcceptInvitePage() {
-  useTitle('Join');
+  useTitle(t('Join'));
   const token = useLinkToken();
   const accept = useAcceptInvite();
 
   const gone = (
-    <LinkProblem title="This invitation has expired">
-      Invitation links work once, for a limited time, and stop working when a newer invitation is sent. Ask your admin to
-      send you a new one.
+    <LinkProblem title={t('This invitation has expired')}>
+      {t('Invitation links work once, for a limited time, and stop working when a newer invitation is sent. Ask your admin to send you a new one.')}
     </LinkProblem>
   );
   // The link can also stop working while the form is open (for example, the admin sent a newer one).
@@ -191,7 +191,7 @@ function AcceptInviteForm({
       {
         onSuccess: (user) => {
           navigate('/', { replace: true });
-          toast.success(`Welcome to ${appName}, ${firstName(user.name)}!`);
+          toast.success(t('Welcome to {appName}, {name}!', { appName, name: firstName(user.name) }));
         },
       },
     );
@@ -203,20 +203,20 @@ function AcceptInviteForm({
 
   return (
     <AuthCard appName={appName}>
-      <h1>Join {appName}</h1>
+      <h1>{t('Join {appName}', { appName })}</h1>
       <p className="lead">
-        {info.invitedBy ? `${info.invitedBy} invited you to join the team.` : 'You have been invited to join the team.'}{' '}
-        Choose a password to finish setting up your account.
+        {info.invitedBy ? t('{name} invited you to join the team.', { name: info.invitedBy }) : t('You have been invited to join the team.')}{' '}
+        {t('Choose a password to finish setting up your account.')}
       </p>
       <form onSubmit={submit} noValidate>
         <SignedInAsSomeoneElse email={info.email}>
-          {(current) => `You're signed in as ${current} in this browser. Joining signs you in as ${info.name} instead.`}
+          {(current) => t('You’re signed in as {current} in this browser. Joining signs you in as {name} instead.', { current, name: info.name })}
         </SignedInAsSomeoneElse>
         {accept.error && !Object.keys(fields).length && <ErrorNotice error={accept.error} />}
-        <Field label="Email" htmlFor="invite-email" hint="You'll sign in with this address.">
+        <Field label={t('Email')} htmlFor="invite-email" hint={t('You’ll sign in with this address.')}>
           <input id="invite-email" className="input" type="email" value={info.email} autoComplete="username" readOnly />
         </Field>
-        <Field label="Your name" htmlFor="invite-name" error={fields.name}>
+        <Field label={t('Your name')} htmlFor="invite-name" error={fields.name}>
           <input
             id="invite-name"
             className="input"
@@ -229,10 +229,10 @@ function AcceptInviteForm({
           />
         </Field>
         <Field
-          label="Choose a password"
+          label={t('Choose a password')}
           htmlFor="invite-password"
           error={fields.password}
-          hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+          hint={t('At least {count} characters.', { count: PASSWORD_MIN_LENGTH })}
         >
           <PasswordInput
             id="invite-password"
@@ -245,7 +245,7 @@ function AcceptInviteForm({
             autoFocus
           />
         </Field>
-        <Field label="Repeat password" htmlFor="invite-confirm" error={pw.mismatch ? "The passwords don't match." : undefined}>
+        <Field label={t('Repeat password')} htmlFor="invite-confirm" error={pw.mismatch ? t('The passwords don’t match.') : undefined}>
           <PasswordInput
             id="invite-confirm"
             value={pw.confirm}
@@ -257,7 +257,7 @@ function AcceptInviteForm({
           />
         </Field>
         <SubmitButton pending={accept.isPending} disabled={accept.isSuccess || !name.trim()}>
-          Join {appName}
+          {t('Join {appName}', { appName })}
         </SubmitButton>
       </form>
     </AuthCard>
@@ -269,7 +269,7 @@ function AcceptInviteForm({
 // ---------------------------------------------------------------------------
 
 export function ResetPasswordPage() {
-  useTitle('Choose a new password');
+  useTitle(t('Choose a new password'));
   const token = useLinkToken();
   const complete = useCompletePasswordReset();
   const status = useAppStatus();
@@ -278,16 +278,16 @@ export function ResetPasswordPage() {
 
   const gone = (
     <LinkProblem
-      title="This link has expired"
+      title={t('This link has expired')}
       actions={
         canRequest && (
           <Link to="/?forgot" className="btn btn-primary btn-lg btn-block">
-            Email me a new link
+            {t('Email me a new link')}
           </Link>
         )
       }
     >
-      Password reset links work once, for a limited time. {canRequest ? 'You can ask for a new one.' : 'Ask an admin to send you a new one.'}
+      {t('Password reset links work once, for a limited time.')} {canRequest ? t('You can ask for a new one.') : t('Ask an admin to send you a new one.')}
     </LinkProblem>
   );
   if (isGone(complete.error)) return gone;
@@ -327,7 +327,7 @@ function ResetPasswordForm({
             return;
           }
           navigate('/', { replace: true });
-          toast.success("Your new password is saved and you're signed in.");
+          toast.success(t('Your new password is saved and you’re signed in.'));
         },
       },
     );
@@ -341,7 +341,7 @@ function ResetPasswordForm({
           onBack={() => navigate('/', { replace: true })}
           onDone={() => {
             navigate('/', { replace: true });
-            toast.success("Your new password is saved and you're signed in.");
+            toast.success(t('Your new password is saved and you’re signed in.'));
           }}
         />
       </AuthCard>
@@ -354,21 +354,21 @@ function ResetPasswordForm({
 
   return (
     <AuthCard appName={appName}>
-      <h1>Choose a new password</h1>
-      <p className="lead">Hi {firstName(info.name)}, pick a new password that only you know.</p>
+      <h1>{t('Choose a new password')}</h1>
+      <p className="lead">{t('Hi {name}, pick a new password that only you know.', { name: firstName(info.name) })}</p>
       <form onSubmit={submit} noValidate>
         <SignedInAsSomeoneElse email={info.email}>
-          {(current) => `You're signed in as ${current} in this browser. Saving signs you in as ${info.name} instead.`}
+          {(current) => t('You’re signed in as {current} in this browser. Saving signs you in as {name} instead.', { current, name: info.name })}
         </SignedInAsSomeoneElse>
         {complete.error && !Object.keys(fields).length && <ErrorNotice error={complete.error} />}
-        <Field label="Email" htmlFor="reset-email">
+        <Field label={t('Email')} htmlFor="reset-email">
           <input id="reset-email" className="input" type="email" value={info.email} autoComplete="username" readOnly />
         </Field>
         <Field
-          label="New password"
+          label={t('New password')}
           htmlFor="reset-password"
           error={fields.password}
-          hint={`At least ${PASSWORD_MIN_LENGTH} characters. You'll be signed out on your other devices.`}
+          hint={t('At least {count} characters. You’ll be signed out on your other devices.', { count: PASSWORD_MIN_LENGTH })}
         >
           <PasswordInput
             id="reset-password"
@@ -381,7 +381,7 @@ function ResetPasswordForm({
             autoFocus
           />
         </Field>
-        <Field label="Repeat new password" htmlFor="reset-confirm" error={pw.mismatch ? "The passwords don't match." : undefined}>
+        <Field label={t('Repeat new password')} htmlFor="reset-confirm" error={pw.mismatch ? t('The passwords don’t match.') : undefined}>
           <PasswordInput
             id="reset-confirm"
             value={pw.confirm}
@@ -393,7 +393,7 @@ function ResetPasswordForm({
           />
         </Field>
         <SubmitButton pending={complete.isPending} disabled={complete.isSuccess}>
-          Save password and sign in
+          {t('Save password and sign in')}
         </SubmitButton>
       </form>
     </AuthCard>
