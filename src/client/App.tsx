@@ -9,6 +9,7 @@ import { ErrorNotice, PageLoading } from './components/Feedback';
 import { useLanguage } from './i18n';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
+import { CalendarPage } from './pages/CalendarPage';
 import { ForcedPasswordChangePage, LoginPage, SetupPage } from './pages/AuthPages';
 import { DashboardPage } from './pages/DashboardPage';
 import { AcceptInvitePage, ResetPasswordPage } from './pages/LinkPages';
@@ -69,6 +70,7 @@ export function App() {
               <Route path="projects" element={<ProjectsPage />} />
               <Route path="projects/:projectId/:view?" element={<ProjectPage />} />
               <Route path="timeline" element={<TimelinePage />} />
+              <Route path="calendar" element={<CalendarPage />} />
               <Route path="team" element={<TeamPage />} />
               <Route path="account" element={<AccountPage />} />
               <Route path="trash" element={<TrashPage />} />

@@ -65,6 +65,7 @@ export const qk = {
   trash: ['trash'] as const,
   sessions: ['sessions'] as const,
   adminStatus: ['admin-status'] as const,
+  views: ['views'] as const,
 };
 
 function toQueryString(params: Record<string, string | number | boolean | undefined>): string {
@@ -427,6 +428,11 @@ export interface TaskInput {
   dueDate?: string | null;
   labelIds?: number[];
   recurrence?: Recurrence | null;
+  /** Makes the task a subtask of another task in the same project (null: a normal task again). */
+  parentId?: number | null;
+  milestoneId?: number | null;
+  /** Custom field values by field id; null clears one. */
+  fields?: Record<string, string | number | boolean | null>;
 }
 
 export type TaskPatch = Partial<Omit<TaskInput, 'projectId'>> & { projectId?: number };
@@ -451,8 +457,22 @@ export function useUpdateTask() {
     mutationFn: ({ id, patch }: { id: number; patch: TaskPatch }) => api<TaskSaveResult>(`/tasks/${id}`, { method: 'PATCH', body: patch }),
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: ['tasks'] });
-      const { labelIds, recurrence, ...simple } = patch;
-      patchTaskCaches(qc, id, { ...simple, ...(labelIds ? { labelIds } : {}), ...(recurrence !== undefined ? { recurrence } : {}) } as Partial<Task>);
+      const { labelIds, recurrence, fields, ...simple } = patch;
+      const optimistic: Partial<Task> = { ...simple, ...(labelIds ? { labelIds } : {}), ...(recurrence !== undefined ? { recurrence } : {}) } as Partial<Task>;
+      if (fields) {
+        // Merge the changed values into each cached copy of the task.
+        const merge = (old: Task) => {
+          const values = { ...old.fieldValues };
+          for (const [key, value] of Object.entries(fields)) {
+            if (value === null || value === '' || value === false) delete values[key];
+            else values[key] = String(value);
+          }
+          return values;
+        };
+        qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => old?.map((task) => (task.id === id ? { ...task, fieldValues: merge(task) } : task)));
+        qc.setQueryData<Task>(qk.task(id), (old) => (old ? { ...old, fieldValues: merge(old) } : old));
+      }
+      patchTaskCaches(qc, id, optimistic);
     },
     onSuccess: (result) => patchTaskCaches(qc, result.task.id, result.task),
     onError: () => invalidateWork(qc),

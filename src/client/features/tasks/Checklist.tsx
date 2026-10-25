@@ -1,14 +1,15 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ListTree, Plus, Trash2 } from 'lucide-react';
 import type { ChecklistItem } from '../../../shared/types';
 import { errorMessage } from '../../api/client';
 import { useAddChecklistItem, useChecklist, useDeleteChecklistItem, useReorderChecklist, useUpdateChecklistItem } from '../../api/board';
+import { useChecklistToSubtask } from '../../api/planning';
 import { Meter } from '../../components/Bits';
 import { Spinner, useToast } from '../../components/Feedback';
 import { t } from '../../i18n';
 
 /** The checklist inside a task: tick items off, add, rename, reorder and remove them. */
-export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: boolean }) {
+export function Checklist({ taskId, readOnly, canMakeSubtasks = false }: { taskId: number; readOnly: boolean; canMakeSubtasks?: boolean }) {
   const { data: items, isPending } = useChecklist(taskId);
   const add = useAddChecklistItem(taskId);
   const reorder = useReorderChecklist(taskId);
@@ -57,6 +58,7 @@ export function Checklist({ taskId, readOnly }: { taskId: number; readOnly: bool
               item={item}
               taskId={taskId}
               readOnly={readOnly}
+              canMakeSubtask={canMakeSubtasks}
               first={index === 0}
               last={index === items.length - 1}
               onMove={(delta) => move(index, delta)}
@@ -100,6 +102,7 @@ function ChecklistRow({
   item,
   taskId,
   readOnly,
+  canMakeSubtask,
   first,
   last,
   onMove,
@@ -107,12 +110,14 @@ function ChecklistRow({
   item: ChecklistItem;
   taskId: number;
   readOnly: boolean;
+  canMakeSubtask: boolean;
   first: boolean;
   last: boolean;
   onMove: (delta: number) => void;
 }) {
   const update = useUpdateChecklistItem(taskId);
   const remove = useDeleteChecklistItem(taskId);
+  const toSubtask = useChecklistToSubtask(taskId);
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(item.body);
@@ -178,6 +183,23 @@ function ChecklistRow({
           <button type="button" className="icon-btn icon-btn-sm" onClick={() => onMove(1)} disabled={last} aria-label={t('Move down')}>
             <ArrowDown size={13} />
           </button>
+          {canMakeSubtask && (
+            <button
+              type="button"
+              className="icon-btn icon-btn-sm"
+              disabled={toSubtask.isPending}
+              onClick={() =>
+                toSubtask.mutate(item.id, {
+                  onSuccess: () => toast.success(t('“{body}” is now a subtask', { body: item.body })),
+                  onError: (e) => toast.error(errorMessage(e)),
+                })
+              }
+              aria-label={t('Make {body} a subtask', { body: item.body })}
+              title={t('Make it a subtask')}
+            >
+              <ListTree size={13} />
+            </button>
+          )}
           <button
             type="button"
             className="icon-btn icon-btn-sm"

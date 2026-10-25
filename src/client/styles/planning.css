@@ -1,0 +1,764 @@
+/* ---------- Planning: subtasks, milestones, custom fields, swimlanes, calendar, saved views ---------- */
+
+/* The right-hand part of a filter row (counts, grouping, saved views) wraps as one group. */
+.toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* Toolbar buttons that hold an active choice (a saved view, field filters). */
+.btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.dot-changed {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.badge-success {
+  background: var(--good-soft);
+  color: var(--good-text);
+}
+
+.badge-warning {
+  background: var(--warning-soft);
+  color: var(--text);
+}
+
+.badge-critical {
+  background: var(--critical-soft);
+  color: var(--critical-text);
+}
+
+.chip-button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.chip-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.chip-button svg {
+  color: var(--accent);
+}
+
+.chip-button.chip-overdue svg {
+  color: var(--critical);
+}
+
+/* ---------- Subtasks ---------- */
+.parent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0 0 6px;
+  padding: 2px 6px 2px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.parent-link:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.subtask:hover {
+  background: var(--surface-2);
+}
+
+.subtask-title {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.subtask-title:hover span {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.subtask.is-done .subtask-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.task-card-parent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: -4px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.task-card-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.field-chip {
+  max-width: 100%;
+  font-size: var(--text-xs);
+}
+
+.field-chip .muted {
+  margin-right: 2px;
+}
+
+.table-parent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.table-subtasks {
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+/* ---------- Swimlanes ---------- */
+.board-lanes {
+  display: grid;
+  grid-template-columns: repeat(var(--board-cols, 4), minmax(250px, 1fr));
+  gap: 0 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.board-lanes-head,
+.board-lane,
+.board-lane-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.board-lanes-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 6px;
+  background: var(--bg);
+}
+
+.board-column-head {
+  min-height: 0;
+  max-height: none;
+}
+
+.board-lane {
+  border-top: 1px solid var(--border);
+  padding: 4px 0 10px;
+}
+
+.board-lane-header {
+  position: sticky;
+  left: 0;
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(100%, 420px);
+  margin: 2px 0 6px;
+  padding: 4px 8px 4px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.board-lane-header:hover {
+  background: var(--surface-2);
+}
+
+.board-lane-header .board-count {
+  font-weight: 500;
+}
+
+.board-lane.is-collapsed {
+  padding-bottom: 2px;
+}
+
+.board-cell {
+  min-height: 52px;
+  max-height: none;
+  padding: 8px;
+  overflow: visible;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.12s;
+}
+
+.board-column-body.is-over {
+  border-color: var(--focus-ring);
+}
+
+.board-cell .board-add {
+  justify-content: center;
+  opacity: 0;
+}
+
+.board-cell:hover .board-add,
+.board-cell .board-add:focus-visible,
+.board-cell:only-child .board-add {
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .board-lanes {
+    grid-template-columns: repeat(var(--board-cols, 4), 78vw);
+  }
+  .board-cell .board-add {
+    opacity: 1;
+  }
+}
+
+/* ---------- Calendar ---------- */
+.calendar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.calendar.has-side {
+  grid-template-columns: minmax(0, 1fr) 240px;
+}
+
+.calendar-main {
+  padding: 0;
+  overflow: hidden;
+}
+
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.calendar-title {
+  flex: 1;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.calendar-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-weekdays,
+.calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekday {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.calendar-day {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 112px;
+  padding: 4px 5px 6px;
+  border-right: 1px solid var(--grid);
+  border-bottom: 1px solid var(--grid);
+  transition: background-color 0.1s;
+}
+
+.calendar-week .calendar-day:last-child {
+  border-right: none;
+}
+
+.calendar-grid.is-week .calendar-day {
+  min-height: 420px;
+}
+
+.calendar-day.is-weekend {
+  background: color-mix(in oklab, var(--grid) 30%, transparent);
+}
+
+.calendar-day.is-outside .calendar-date {
+  color: var(--text-3);
+}
+
+.calendar-day.is-over {
+  background: var(--accent-soft);
+}
+
+.calendar-day-head {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+
+.calendar-date {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.calendar-day.is-today .calendar-date {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.calendar-grid.is-week .calendar-day.is-today {
+  background: color-mix(in oklab, var(--accent-soft) 60%, transparent);
+}
+
+.calendar-add {
+  margin-left: auto;
+  opacity: 0;
+}
+
+.calendar-day:hover .calendar-add,
+.calendar-add:focus-visible {
+  opacity: 1;
+}
+
+.calendar-task {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding: 2px 6px 2px 5px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--chip-color, var(--accent));
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.calendar-task:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--chip-color, var(--accent));
+  box-shadow: var(--shadow-sm);
+}
+
+.calendar-task > .truncate {
+  flex: 1;
+}
+
+/* Month cells are narrow: the title gets the room, the person shows in the tooltip and the week view. */
+.calendar-grid.is-month .calendar-task .avatar {
+  display: none;
+}
+
+.calendar-task.is-done {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.calendar-task.is-late {
+  background: var(--critical-soft);
+}
+
+.calendar-task.is-placeholder {
+  opacity: 0.35;
+}
+
+.calendar-task.is-overlay {
+  width: 200px;
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+
+.calendar-milestone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--chip-color, var(--accent)) 16%, transparent);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.calendar-milestone svg {
+  flex-shrink: 0;
+  color: var(--chip-color, var(--accent));
+  fill: currentColor;
+}
+
+.calendar-milestone.is-reached {
+  opacity: 0.6;
+}
+
+.calendar-milestone.is-late {
+  background: var(--critical-soft);
+}
+
+.calendar-milestone.is-late svg {
+  color: var(--critical);
+}
+
+.calendar-more {
+  align-self: flex-start;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  font-weight: 560;
+}
+
+.calendar-more:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.calendar-side {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 140px);
+  padding: 12px;
+  transition: background-color 0.1s, border-color 0.1s;
+}
+
+.calendar-side.is-over {
+  border-color: var(--focus-ring);
+  background: var(--accent-soft);
+}
+
+.calendar-side .section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.calendar-side-hint {
+  font-size: var(--text-xs);
+}
+
+.calendar-side-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .calendar.has-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .calendar-side {
+    position: static;
+    max-height: 280px;
+  }
+  .calendar-day {
+    min-height: 76px;
+    padding: 2px;
+  }
+  .calendar-task {
+    padding: 1px 3px;
+  }
+  .calendar-task .avatar,
+  .calendar-task svg {
+    display: none;
+  }
+  .calendar-grid.is-week .calendar-weekdays,
+  .calendar-grid.is-week .calendar-week {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .calendar-grid.is-week .calendar-weekdays {
+    display: none;
+  }
+  .calendar-grid.is-week .calendar-day {
+    min-height: 0;
+    border-right: none;
+  }
+}
+
+/* ---------- Milestones on the timeline ---------- */
+.timeline-header.has-milestones {
+  height: 78px;
+}
+
+.timeline-header.has-milestones .timeline-corner {
+  padding-bottom: 34px;
+}
+
+.scale-milestones {
+  top: 52px;
+  border-top: 1px solid var(--grid);
+}
+
+.scale-milestone {
+  position: absolute;
+  top: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 20px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--chip-color, var(--accent)) 18%, var(--surface));
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-10px);
+}
+
+.scale-milestone svg {
+  flex-shrink: 0;
+  color: var(--chip-color, var(--accent));
+  fill: currentColor;
+}
+
+.scale-milestone.is-reached {
+  opacity: 0.6;
+}
+
+.scale-milestone.is-risk {
+  background: var(--warning-soft);
+}
+
+.scale-milestone.is-late {
+  background: var(--critical-soft);
+}
+
+.scale-milestone.is-late svg {
+  color: var(--critical);
+}
+
+.grid-milestone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed color-mix(in oklab, var(--chip-color, var(--accent)) 70%, transparent);
+  margin-left: -1px;
+}
+
+.grid-milestone.is-late {
+  border-left-color: var(--critical);
+}
+
+.milestone-warning {
+  display: inline-flex;
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.milestone-warning svg {
+  fill: currentColor;
+}
+
+/* ---------- Milestones dialog ---------- */
+.milestone-list,
+.field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.milestone-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.milestone-row > .checkbox {
+  margin-top: 3px;
+}
+
+.milestone-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.milestone-icon {
+  color: var(--accent);
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.milestone-row.is-late .milestone-icon {
+  color: var(--critical);
+}
+
+.milestone-row.is-reached strong {
+  color: var(--text-2);
+  text-decoration: line-through;
+}
+
+.milestone-description {
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
+
+.milestone-new {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.milestone-new .input:first-child {
+  flex: 1;
+  min-width: 180px;
+}
+
+.milestone-new .input[type='date'] {
+  width: auto;
+}
+
+/* ---------- Custom fields dialog ---------- */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.field-row.is-editing {
+  display: block;
+  padding: 12px;
+}
+
+.field-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row-options {
+  font-size: var(--text-sm);
+}
+
+.field-form {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.field-row.is-editing .field-form {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.field-form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+fieldset.field {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+}
+
+.option-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option-rows .label-row .input {
+  flex: 1;
+}

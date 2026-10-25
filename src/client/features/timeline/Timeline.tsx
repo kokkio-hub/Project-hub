@@ -1,8 +1,8 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router';
-import { ChevronDown, ChevronRight, CalendarRange } from 'lucide-react';
+import { ChevronDown, ChevronRight, CalendarRange, Diamond } from 'lucide-react';
 import { diffDays, localToday } from '../../../shared/dates';
-import { TASK_STATUS_LABELS, type ColorName, type Project, type Task, type User } from '../../../shared/types';
+import { TASK_STATUS_LABELS, type ColorName, type Milestone, type Project, type Task, type User } from '../../../shared/types';
 import { errorMessage } from '../../api/client';
 import { useUpdateTask } from '../../api/queries';
 import { Avatar } from '../../components/Avatar';
@@ -68,8 +68,23 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
   const labelWidth = viewport < 640 ? 168 : 300;
   const ppd = PX_PER_DAY[zoom];
 
+  // Milestones of the projects shown, with how many linked open tasks are due after them.
+  const milestones = useMemo(
+    () =>
+      groups.flatMap(({ project, tasks }) =>
+        project.milestones.map((m) => ({
+          ...m,
+          color: project.color,
+          projectName: project.name,
+          lateTasks: tasks.filter((x) => x.milestoneId === m.id && x.status !== 'done' && !!x.dueDate && x.dueDate > m.date).length,
+        })),
+      ),
+    [groups],
+  );
+  const milestoneById = useMemo(() => new Map(milestones.map((m) => [m.id, m])), [milestones]);
+
   const allDates = useMemo(() => {
-    const dates: string[] = [];
+    const dates: string[] = milestones.map((m) => m.date);
     for (const { project, tasks } of groups) {
       if (project.startDate) dates.push(project.startDate);
       if (project.dueDate) dates.push(project.dueDate);
@@ -79,7 +94,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
       }
     }
     return dates;
-  }, [groups]);
+  }, [groups, milestones]);
 
   const minDays = Math.ceil(Math.max(0, viewport - labelWidth) / ppd) + 1;
   const range = useMemo(() => computeRange(allDates, today, zoom, minDays), [allDates, today, zoom, minDays]);
@@ -175,7 +190,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
 
       <div className="timeline-scroll" ref={scrollRef}>
         <div className="timeline-inner" style={{ width: labelWidth + trackWidth }}>
-          <div className="timeline-header">
+          <div className={`timeline-header ${milestones.length > 0 ? 'has-milestones' : ''}`}>
             <div className="timeline-corner">{showGroups ? t('Project / task') : t('Task')}</div>
             <div className="timeline-scale" style={{ width: trackWidth }}>
               <div className="scale-row scale-top">
@@ -196,6 +211,31 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
                   </div>
                 ))}
               </div>
+              {milestones.length > 0 && (
+                <div className="scale-row scale-milestones">
+                  {milestones.map((m) => {
+                    const late = !m.reachedAt && m.date < today;
+                    const status = m.reachedAt
+                      ? t('Reached')
+                      : late
+                        ? t('Not reached, date has passed')
+                        : m.lateTasks > 0
+                          ? tn('{count} linked task is due after it', '{count} linked tasks are due after it', m.lateTasks)
+                          : t('{done}/{total} done', { done: m.doneCount, total: m.taskCount });
+                    return (
+                      <span
+                        key={m.id}
+                        className={`scale-milestone ${m.reachedAt ? 'is-reached' : ''} ${late ? 'is-late' : m.lateTasks > 0 ? 'is-risk' : ''}`}
+                        style={{ left: (diffDays(m.date, range.start) + 0.5) * ppd, '--chip-color': `var(--cat-${m.color})` } as CSSProperties}
+                        title={`${showGroups ? `${m.projectName}: ` : ''}${m.name} · ${formatDate(m.date)} · ${status}`}
+                      >
+                        <Diamond size={11} aria-hidden />
+                        <span className="truncate">{m.name}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -206,6 +246,13 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
               ))}
               {grid.lines.map((x) => (
                 <div key={`l${x}`} className="grid-line" style={{ left: x }} />
+              ))}
+              {milestones.map((m) => (
+                <div
+                  key={`m${m.id}`}
+                  className={`grid-milestone ${!m.reachedAt && m.date < today ? 'is-late' : ''}`}
+                  style={{ left: (diffDays(m.date, range.start) + 0.5) * ppd, '--chip-color': `var(--cat-${m.color})` } as CSSProperties}
+                />
               ))}
               <div className="grid-today" style={{ left: todayX }} title={t('Today, {date}', { date: formatDate(today) })} />
             </div>
@@ -245,6 +292,7 @@ export function Timeline({ groups, showGroups, usersById, onOpenTask }: Timeline
                         rangeStart={range.start}
                         ppd={ppd}
                         today={today}
+                        milestone={task.milestoneId !== null ? milestoneById.get(task.milestoneId) : undefined}
                         readOnly={project.status === 'archived'}
                         onOpen={onOpenTask}
                         onReschedule={reschedule}
@@ -454,6 +502,7 @@ const TaskRow = memo(function TaskRow({
   rangeStart,
   ppd,
   today,
+  milestone,
   readOnly,
   onOpen,
   onReschedule,
@@ -465,6 +514,8 @@ const TaskRow = memo(function TaskRow({
   rangeStart: string;
   ppd: number;
   today: string;
+  /** The milestone the task is linked to. */
+  milestone?: Milestone;
   readOnly: boolean;
   onOpen: (id: number) => void;
   onReschedule: (task: Task, dates: { startDate: string | null; dueDate: string | null }) => void;
@@ -520,6 +571,11 @@ const TaskRow = memo(function TaskRow({
       <span className={`task-label-title truncate ${task.status === 'done' ? 'is-done' : ''}`} title={task.title}>
         {task.title}
       </span>
+      {milestone && task.status !== 'done' && !!task.dueDate && task.dueDate > milestone.date && (
+        <span className="milestone-warning" title={t('Due after its milestone {name} ({date})', { name: milestone.name, date: formatDate(milestone.date) })}>
+          <Diamond size={12} aria-label={t('Due after its milestone {name} ({date})', { name: milestone.name, date: formatDate(milestone.date) })} />
+        </span>
+      )}
       <Avatar user={assignee ?? null} size="xs" />
     </div>
   );

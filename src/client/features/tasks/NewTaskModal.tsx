@@ -14,7 +14,7 @@ interface Props {
   onClose: () => void;
   /** Fixed project; when omitted the form shows a project picker. */
   projectId?: number;
-  defaults?: { status?: TaskStatus; assigneeId?: number | null };
+  defaults?: { status?: TaskStatus; assigneeId?: number | null; dueDate?: string };
   onCreated?: (taskId: number) => void;
 }
 
@@ -41,7 +41,7 @@ function NewTaskForm({ projectId, defaults, onClose, onCreated }: Omit<Props, 'o
     priority: 'medium' as TaskPriority,
     assigneeId: defaults?.assigneeId ?? (null as number | null),
     startDate: '',
-    dueDate: '',
+    dueDate: defaults?.dueDate ?? '',
     labelIds: [] as number[],
     recurrence: null as Recurrence | null,
   });

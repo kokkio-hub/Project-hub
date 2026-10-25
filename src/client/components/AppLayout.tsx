@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
 import {
+  Bookmark,
+  CalendarDays,
   ChartGantt,
   Check,
   FolderKanban,
@@ -22,6 +24,8 @@ import {
 import { USER_ROLE_LABELS } from '../../shared/types';
 import { useLiveUpdates } from '../api/live';
 import { useLogout, useProjects, useTasks } from '../api/queries';
+import { useViews } from '../api/planning';
+import { viewPath } from '../features/planning/views';
 import { canChangeWork, useAppName, useCurrentUser } from '../auth/session';
 import { NotificationsButton } from '../features/notifications/NotificationsButton';
 import { ProjectFormModal } from '../features/projects/ProjectFormModal';
@@ -101,6 +105,11 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
   const { data: projects } = useProjects();
   const { data: myOpenTasks } = useTasks({ assigneeId: 'me', status: 'todo,in_progress,review' });
   const visibleProjects = (projects ?? []).filter((p) => p.status === 'active' || p.status === 'on_hold');
+  const { views } = useViews();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const activeSaved = Number(searchParams.get('saved'));
+  const projectNames = new Map((projects ?? []).map((p) => [p.id, p.name]));
 
   return (
     <aside className="sidebar" aria-label={t('Main navigation')}>
@@ -138,6 +147,9 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
         <NavLink to="/timeline" className="nav-link">
           <ChartGantt size={17} aria-hidden /> {t('Timeline')}
         </NavLink>
+        <NavLink to="/calendar" className="nav-link">
+          <CalendarDays size={17} aria-hidden /> {t('Calendar')}
+        </NavLink>
         <NavLink to="/team" className="nav-link">
           <Users size={17} aria-hidden /> {t('Team')}
         </NavLink>
@@ -164,6 +176,30 @@ function Sidebar({ onNewProject, onSearch }: { onNewProject: () => void; onSearc
           </button>
         )}
       </nav>
+
+      {views.length > 0 && (
+        <>
+          <div className="sidebar-section">{t('Saved views')}</div>
+          <nav className="sidebar-projects" aria-label={t('Saved views')}>
+            {views.map((v) => {
+              const to = viewPath(v.projectId, v.view, v.id);
+              const current = activeSaved === v.id && location.pathname === to.split('?')[0];
+              return (
+                <Link
+                  key={v.id}
+                  to={to}
+                  className={`nav-link ${current ? 'active' : ''}`}
+                  aria-current={current ? 'page' : undefined}
+                  title={projectNames.has(v.projectId) ? `${projectNames.get(v.projectId)} · ${v.name}` : v.name}
+                >
+                  <Bookmark size={15} aria-hidden />
+                  <span className="truncate">{v.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </>
+      )}
 
       {user.role !== 'guest' && (
         <nav className="sidebar-nav sidebar-extra" aria-label={t('More')}>

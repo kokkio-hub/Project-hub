@@ -5,6 +5,7 @@ import { errorMessage } from '../../api/client';
 import { useCreateLabel, useDeleteLabel, useUpdateLabel } from '../../api/board';
 import { useConfirm, useToast } from '../../components/Feedback';
 import { t } from '../../i18n';
+import { colorLabel } from '../../lib/colors';
 
 /** Rename, recolour, add and remove a project's labels. Changes save straight away. */
 export function LabelManager({ project }: { project: Project }) {
@@ -50,14 +51,14 @@ export function LabelManager({ project }: { project: Project }) {
   );
 }
 
-function ColorSelect({ value, onChange }: { value: ColorName; onChange: (c: ColorName) => void }) {
+export function ColorSelect({ value, onChange, label = t('Label colour') }: { value: ColorName; onChange: (c: ColorName) => void; label?: string }) {
   return (
     <span className="color-select">
       <span className="label-dot" style={{ background: `var(--cat-${value})` }} aria-hidden />
-      <select className="select select-sm" value={value} onChange={(e) => onChange(e.target.value as ColorName)} aria-label={t('Label colour')}>
+      <select className="select select-sm" value={value} onChange={(e) => onChange(e.target.value as ColorName)} aria-label={label}>
         {COLOR_NAMES.map((c) => (
           <option key={c} value={c}>
-            {c[0]!.toUpperCase() + c.slice(1)}
+            {colorLabel(c)}
           </option>
         ))}
       </select>

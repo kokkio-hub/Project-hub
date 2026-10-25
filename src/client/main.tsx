@@ -10,6 +10,7 @@ import './styles/board.css';
 import './styles/timeline.css';
 import './styles/pages.css';
 import './styles/features.css';
+import './styles/planning.css';
 import { ApiError } from './api/client';
 import { App } from './App';
 import { ConfirmProvider, ToastProvider } from './components/Feedback';

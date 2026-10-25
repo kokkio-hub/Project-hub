@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Archive, Ellipsis, Eye, Link2, Pencil, Repeat, Trash2, X } from 'lucide-react';
+import { Archive, Diamond, Ellipsis, Eye, Link2, Pencil, Repeat, Trash2, X } from 'lucide-react';
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
@@ -46,6 +46,9 @@ import { Attachments } from './Attachments';
 import { Checklist } from './Checklist';
 import { Dependencies } from './Dependencies';
 import { MentionText, MentionTextarea } from './Mentions';
+import { ParentLink, Subtasks } from './Subtasks';
+import { FieldInput } from '../planning/Fields';
+import { formatDate } from '../../lib/format';
 import { t, tr } from '../../i18n';
 
 export function TaskDrawer({ taskId, onClose }: { taskId: number | null; onClose: () => void }) {
@@ -313,6 +316,8 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
           </div>
         )}
 
+        {item.parentId !== null && <ParentLink parentId={item.parentId} />}
+
         <TitleEditor task={item} readOnly={readOnly} onSave={(title) => save({ title })} />
 
         <dl className="props">
@@ -411,6 +416,29 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
             {readOnly && item.labelIds.length === 0 && <span className="muted">{t('None')}</span>}
           </dd>
 
+          {project && (project.milestones.length > 0 || item.milestoneId !== null) && (
+            <>
+              <dt>{t('Milestone')}</dt>
+              <dd>
+                <Diamond size={14} className="secondary" aria-hidden />
+                <select
+                  className="select select-sm"
+                  value={item.milestoneId ?? ''}
+                  disabled={readOnly}
+                  aria-label={t('Milestone')}
+                  onChange={(e) => save({ milestoneId: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">{t('None')}</option>
+                  {project.milestones.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {t('{name} ({date})', { name: m.name, date: formatDate(m.date) })}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+            </>
+          )}
+
           <dt>{t('Project')}</dt>
           <dd>
             <select
@@ -429,11 +457,24 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
                 ))}
             </select>
           </dd>
+
+          {project?.fields.map((field) => (
+            <FieldRow key={field.id} name={field.name}>
+              <FieldInput
+                field={field}
+                value={item.fieldValues[field.id]}
+                readOnly={readOnly}
+                onChange={(value) => save({ fields: { [field.id]: value } })}
+              />
+            </FieldRow>
+          ))}
         </dl>
 
         <DescriptionEditor task={item} readOnly={readOnly} onSave={(description) => save({ description })} />
 
-        <Checklist taskId={item.id} readOnly={readOnly} />
+        {item.parentId === null && <Subtasks task={item} readOnly={readOnly} />}
+
+        <Checklist taskId={item.id} readOnly={readOnly} canMakeSubtasks={item.parentId === null} />
 
         <Dependencies task={item} projectsById={projectsById} readOnly={readOnly} />
 
@@ -455,6 +496,17 @@ function TaskDetails({ taskId, onClose }: { taskId: number; onClose: () => void 
           {item.completedAt && ` · ${t('Completed {time}', { time: formatDateTime(item.completedAt) })}`}
         </p>
       </div>
+    </>
+  );
+}
+
+function FieldRow({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="truncate" title={name}>
+        {name}
+      </dt>
+      <dd>{children}</dd>
     </>
   );
 }
